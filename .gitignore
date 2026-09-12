@@ -1,0 +1,20 @@
+# Личные настройки: содержат IP камеры и пароль
+config.json
+
+# Записи и снимки
+*.mp4
+*.png
+*.jpg
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Логи
+*.log
+
+# PyCharm / VS Code
+.idea/
+.vscode/

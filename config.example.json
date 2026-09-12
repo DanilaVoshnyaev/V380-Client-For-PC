@@ -1,0 +1,11 @@
+{
+  "host": "192.168.1.100",
+  "onvif_port": 8899,
+  "rtsp_port": 554,
+  "user": "admin",
+  "password": "ВАШ_ПАРОЛЬ",
+  "ptz_speed": 0.5,
+  "save_dir": "C:/Users/ВАШ_ПОЛЬЗОВАТЕЛЬ/Pictures/Camera",
+  "network_caching_ms": 300,
+  "use_tcp": true
+}
