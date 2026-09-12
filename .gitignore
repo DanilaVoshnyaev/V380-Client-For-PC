@@ -18,3 +18,6 @@ venv/
 # PyCharm / VS Code
 .idea/
 .vscode/
+
+# Заготовки записей для базы (личные, до отправки в PR)
+reports/

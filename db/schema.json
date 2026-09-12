@@ -1,0 +1,166 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Запись о модели камеры",
+  "description": "Один файл — одна модель/прошивка. Так правки из разных pull request не конфликтуют.",
+  "type": "object",
+  "required": ["id", "display_name", "match", "unlock", "verified"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9.]+)*$",
+      "description": "Уникальный идентификатор, он же имя файла. Пример: macro-video-ipcamera-2.4"
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 3,
+      "description": "Человеческое название. Пример: V380 / Galatron PTZ (macro-video)"
+    },
+    "aliases": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Под какими брендами продаётся то же железо"
+    },
+    "cloud_app": {
+      "type": "string",
+      "description": "Мобильное приложение вендора: V380 Pro, iCSee, YCC365, Tuya и т.д."
+    },
+
+    "match": {
+      "type": "object",
+      "description": "Признаки опознавания. Чем больше заполнено, тем точнее совпадение.",
+      "additionalProperties": false,
+      "properties": {
+        "onvif_manufacturer": {"type": "string"},
+        "onvif_model": {"type": "string"},
+        "firmware": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Версии прошивок, на которых проверено"
+        },
+        "rtsp_banner": {
+          "type": "string",
+          "description": "Подстрока из поля s= в SDP-ответе RTSP"
+        },
+        "http_server": {
+          "type": "string",
+          "description": "Подстрока из заголовка Server HTTP-ответа"
+        },
+        "mac_prefixes": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^([0-9A-F]{2}:){2}[0-9A-F]{2}$"},
+          "description": "OUI в верхнем регистре. Пример: 4C:2F:7B"
+        },
+        "ports": {
+          "type": "array",
+          "items": {"type": "integer", "minimum": 1, "maximum": 65535},
+          "description": "Характерный набор открытых портов"
+        }
+      }
+    },
+
+    "unlock": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": ["open", "hidden-onvif", "closed", "firmware-mod"],
+          "description": "open — работает сразу; hidden-onvif — включается в приложении; closed — штатно никак; firmware-mod — только сменой прошивки"
+        },
+        "steps": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Пошаговая инструкция включения, по шагу на строку"
+        },
+        "requires_reboot": {"type": "boolean"},
+        "app_path": {
+          "type": "string",
+          "description": "Где искать настройку в приложении вендора"
+        }
+      }
+    },
+
+    "onvif": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "port": {"type": "integer"},
+        "service_path": {"type": "string"},
+        "auth_required": {"type": "boolean"},
+        "default_user": {"type": "string"}
+      }
+    },
+
+    "rtsp": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "port": {"type": "integer"},
+        "auth_required": {"type": "boolean"}
+      }
+    },
+
+    "streams": {
+      "type": "array",
+      "description": "Пути потоков. {host} и {port} подставляются автоматически.",
+      "items": {
+        "type": "object",
+        "required": ["path"],
+        "additionalProperties": false,
+        "properties": {
+          "path": {"type": "string"},
+          "resolution": {"type": "string"},
+          "codec": {"type": "string"},
+          "audio": {"type": "string"},
+          "label": {"type": "string"}
+        }
+      }
+    },
+
+    "snapshot_url": {
+      "type": "string",
+      "description": "Шаблон адреса снимка, с плейсхолдерами {host} и {profile}"
+    },
+
+    "features": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "true — есть, false — нет, null — не проверено",
+      "properties": {
+        "ptz": {"type": ["boolean", "null"]},
+        "zoom": {"type": ["boolean", "null"]},
+        "presets": {"type": ["boolean", "null"]},
+        "audio": {"type": ["boolean", "null"]},
+        "two_way_audio": {"type": ["boolean", "null"]},
+        "sd_playback": {"type": ["boolean", "null"]},
+        "motion_events": {"type": ["boolean", "null"]}
+      }
+    },
+
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rtsp_without_auth": {
+          "type": ["boolean", "null"],
+          "description": "true — поток отдаётся без пароля. Важное предупреждение для владельца."
+        },
+        "notes": {"type": "string"}
+      }
+    },
+
+    "notes": {"type": "string"},
+
+    "verified": {
+      "type": "object",
+      "required": ["date"],
+      "additionalProperties": false,
+      "properties": {
+        "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+        "by": {"type": "string", "description": "GitHub-ник приславшего"},
+        "tool_version": {"type": "string"}
+      }
+    }
+  }
+}
