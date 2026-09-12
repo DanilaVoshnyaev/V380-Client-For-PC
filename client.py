@@ -17,8 +17,10 @@ import vlc
 
 from camera import Camera
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
+import paths
+
+BASE_DIR = paths.app_dir()
+CONFIG_PATH = paths.config_path()
 
 DEFAULT_CONFIG = {
     "host": "192.168.1.100",

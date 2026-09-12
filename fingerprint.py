@@ -24,20 +24,24 @@ COMMON_RTSP_PATHS = [
 # ---------------------------------------------------------------- порты
 
 def scan_ports(host, ports=None, timeout=1.2):
-    """Возвращает список открытых TCP-портов."""
+    """Возвращает список открытых TCP-портов. Порты проверяются параллельно."""
+    from concurrent.futures import ThreadPoolExecutor
+
     ports = ports or DEFAULT_PORTS
-    found = []
-    for port in ports:
+
+    def check(port):
         sock = socket.socket()
         sock.settimeout(timeout)
         try:
             sock.connect((host, port))
-            found.append(port)
+            return port
         except OSError:
-            pass
+            return None
         finally:
             sock.close()
-    return found
+
+    with ThreadPoolExecutor(max_workers=min(len(ports), 16)) as pool:
+        return sorted(p for p in pool.map(check, ports) if p)
 
 
 # ---------------------------------------------------------------- MAC
@@ -81,15 +85,31 @@ def _rtsp_request(host, port, method, url, extra="", timeout=5):
         request = "%s %s RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: camprobe\r\n%s\r\n" % (
             method, url, extra)
         sock.sendall(request.encode())
+
+        # Сначала дочитываем заголовки целиком
         data = b""
-        while len(data) < 8192:
+        while b"\r\n\r\n" not in data and len(data) < 8192:
             chunk = sock.recv(4096)
             if not chunk:
                 break
             data += chunk
-            if b"\r\n\r\n" in data and len(data) > 200:
-                break
-        head, _, body = data.partition(b"\r\n\r\n")
+
+        head, separator, body = data.partition(b"\r\n\r\n")
+        if not separator:
+            return None, None
+
+        # Тело читаем ровно столько, сколько обещано в Content-Length.
+        # Ждать «пока не отвалится по таймауту» нельзя: короткий ответ
+        # на OPTIONS тогда вообще не возвращается.
+        length = re.search(rb"(?im)^Content-Length:\s*(\d+)", head)
+        if length:
+            expected = int(length.group(1))
+            while len(body) < expected and len(body) < 65536:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                body += chunk
+
         return head.decode("utf-8", "replace"), body.decode("utf-8", "replace")
     except OSError:
         return None, None
@@ -136,12 +156,40 @@ def probe_rtsp_path(host, port, path, timeout=5):
 
 
 def find_rtsp_streams(host, port=554, paths=None, timeout=4):
-    """Перебирает пути и возвращает те, что отвечают потоком."""
+    """
+    Перебирает пути и возвращает те, что отвечают потоком.
+
+    Часть прошивок (в том числе macro-video) отдаёт один и тот же поток на
+    ЛЮБОЙ путь, включая заведомо несуществующий. Поэтому сначала проверяем
+    контрольный несуществующий адрес: если он отвечает потоком, перебор
+    бессмысленен и точные пути надо брать из ONVIF или из базы.
+    """
+    explicit = paths is not None
+    control = probe_rtsp_path(host, port, "/camprobe-nonexistent-path", timeout)
+    catch_all = bool(control and control["status"] == 200)
+
+    if catch_all and not explicit:
+        control["path"] = "(любой путь)"
+        control["url"] = "rtsp://%s:%d/" % (host, port)
+        control["catch_all"] = True
+        return [control]
+
     working = []
+    seen = set()
     for path in (paths or COMMON_RTSP_PATHS):
         info = probe_rtsp_path(host, port, path, timeout)
-        if info and info["status"] in (200, 401):
-            working.append(info)
+        if not info or info["status"] not in (200, 401):
+            continue
+        info["catch_all"] = catch_all
+        # Одинаковые ответы на разные пути схлопываем — но только при переборе.
+        # Пути, полученные от ONVIF, авторитетны: это разные профили, и терять
+        # второй из-за похожего SDP нельзя.
+        if not explicit:
+            key = info.get("sdp") or info["status"]
+            if key in seen:
+                continue
+            seen.add(key)
+        working.append(info)
     return working
 
 
@@ -286,14 +334,113 @@ def query_onvif(host, port, user="admin", password=""):
 
 # ---------------------------------------------------------------- сборка
 
-def build(host, user="admin", password="", ports=None, deep=True):
+def speaks_protocol(host, open_ports, timeout=2.0):
+    """
+    Проверяет, что устройство действительно говорит по ожидаемому протоколу,
+    а не просто принимает TCP-соединение.
+
+    Нужно потому, что в некоторых сетях (Docker, WSL, VPN, captive portal)
+    соединение успешно устанавливается с любым адресом и портом. Без этой
+    проверки сканирование «находит» сотни несуществующих камер.
+
+    Возвращает 'rtsp', 'http' или None.
+    """
+    if 554 in open_ports:
+        head, _ = _rtsp_request(host, 554, "OPTIONS", "rtsp://%s:554/" % host,
+                                timeout=timeout)
+        if head and head.startswith("RTSP/"):
+            return "rtsp"
+
+    for port in open_ports:
+        if port not in (80, 81, 443, 8000, 8080, 8081, 8899, 9000, 34567):
+            continue
+        try:
+            sock = socket.create_connection((host, port), timeout)
+        except OSError:
+            continue
+        try:
+            sock.settimeout(timeout)
+            sock.sendall(b"GET / HTTP/1.0\r\nHost: %s\r\n\r\n" % host.encode())
+            data = sock.recv(256)
+            if data.startswith(b"HTTP/"):
+                return "http"
+        except OSError:
+            pass
+        finally:
+            sock.close()
+    return None
+
+
+def scan_subnet(cidr, ports=None, workers=64, timeout=0.6, progress=None,
+                validate=True):
+    """
+    Быстрый обход подсети: ищет хосты с открытыми «камерными» портами.
+
+    Возвращает список {host, open_ports, protocol}. Полный отпечаток не
+    снимает — это отдельный, более долгий шаг для найденных адресов.
+
+    validate=True отсеивает адреса, которые принимают соединение, но не
+    отвечают ни по RTSP, ни по HTTP.
+    """
+    import ipaddress
+    from concurrent.futures import ThreadPoolExecutor
+
+    ports = ports or [554, 8899, 80, 8000, 8080, 34567]
+    network = ipaddress.ip_network(cidr, strict=False)
+    hosts = [str(ip) for ip in network.hosts()]
+
+    def check(host):
+        found = []
+        for port in ports:
+            sock = socket.socket()
+            sock.settimeout(timeout)
+            try:
+                sock.connect((host, port))
+                found.append(port)
+            except OSError:
+                pass
+            finally:
+                sock.close()
+        return {"host": host, "open_ports": found} if found else None
+
+    results = []
+    done = 0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for item in pool.map(check, hosts):
+            done += 1
+            if progress:
+                progress(done, len(hosts))
+            if item:
+                results.append(item)
+
+    if not validate or not results:
+        for item in results:
+            item.setdefault("protocol", None)
+        return results
+
+    def confirm(item):
+        item["protocol"] = speaks_protocol(item["host"], item["open_ports"])
+        return item
+
+    with ThreadPoolExecutor(max_workers=min(len(results), 32)) as pool:
+        confirmed = list(pool.map(confirm, results))
+
+    return [item for item in confirmed if item["protocol"]]
+
+
+def build(host, user="admin", password="", ports=None, deep=True,
+          known_ports=None, onvif_ports=None):
     """
     Полный отпечаток устройства. Формат совпадает с полями match в базе,
     поэтому результат можно напрямую сопоставлять с записями.
+
+    known_ports — уже известные открытые порты, чтобы не сканировать повторно.
+    onvif_ports — на каких портах пробовать ONVIF. Опрос медленный, поэтому
+    при массовом обходе список стоит сужать.
     """
     result = {
         "host": host,
-        "open_ports": scan_ports(host, ports),
+        "open_ports": known_ports if known_ports is not None else scan_ports(host, ports),
         "mac": get_mac(host),
         "onvif_manufacturer": None,
         "onvif_model": None,
@@ -306,7 +453,7 @@ def build(host, user="admin", password="", ports=None, deep=True):
 
     result["http_server"] = http_banner(host, result["open_ports"])
 
-    for port in (8899, 80, 8000, 8080):
+    for port in (onvif_ports if onvif_ports is not None else (8899, 80, 8000, 8080)):
         if port not in result["open_ports"]:
             continue
         data = query_onvif(host, port, user, password)

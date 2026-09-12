@@ -7,9 +7,11 @@ pull request не конфликтуют между собой.
 import json
 import os
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_DIR = os.path.join(BASE_DIR, "db", "devices")
-SCHEMA_PATH = os.path.join(BASE_DIR, "db", "schema.json")
+import paths
+
+BASE_DIR = paths.app_dir()
+DB_DIR = paths.db_dir()
+SCHEMA_PATH = paths.schema_path()
 
 # Вес признака при сопоставлении. Чем уникальнее признак, тем выше вес.
 WEIGHTS = {

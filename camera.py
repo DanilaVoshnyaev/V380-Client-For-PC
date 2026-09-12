@@ -8,15 +8,27 @@ import threading
 
 
 def _wsdl_dir():
-    """onvif-zeep кладёт wsdl мимо пакета — проверяем известные места."""
+    """
+    onvif-zeep кладёт wsdl мимо пакета — проверяем известные места.
+    В собранном PyInstaller виде файлы лежат во временном каталоге _MEIPASS.
+    """
+    import sys
+
     import onvif
 
+    candidates = []
+    bundle = getattr(sys, "_MEIPASS", None)
+    if bundle:
+        candidates.append(os.path.join(bundle, "wsdl"))
+
     pkg = os.path.dirname(onvif.__file__)
-    for path in (
+    candidates += [
         os.path.join(pkg, "wsdl"),
         os.path.join(os.path.dirname(pkg), "wsdl"),
         os.path.join(sysconfig.get_paths()["purelib"], "wsdl"),
-    ):
+    ]
+
+    for path in candidates:
         if os.path.isfile(os.path.join(path, "devicemgmt.wsdl")):
             return path
     raise RuntimeError("не найден каталог wsdl библиотеки onvif-zeep")

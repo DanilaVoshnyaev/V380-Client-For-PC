@@ -18,8 +18,10 @@ import sys
 import camdb
 import fingerprint
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-TOOL_VERSION = "0.2.0"
+import paths
+
+BASE_DIR = paths.app_dir()
+TOOL_VERSION = "0.3.0"
 
 
 def head(text):
@@ -115,6 +117,17 @@ def show_streams(data, record, host, verify):
         print("  Не найдено. Вероятно, RTSP выключен.")
         return []
 
+    if len(streams) == 1 and streams[0].get("path") == "(любой путь)":
+        print("  Сервер отдаёт поток на ЛЮБОЙ путь, включая несуществующий,")
+        print("  поэтому перебором точный адрес не выяснить.")
+        if record:
+            print("  По базе у этой модели пути такие:")
+            for item in camdb.stream_urls(record, host):
+                print("    %s  %s" % (item["url"], item["resolution"]))
+        else:
+            print("  Точные пути даст ONVIF — включите его и повторите проверку.")
+        return []
+
     working = []
     for stream in streams:
         mark = "нужен пароль" if stream["auth_required"] else "без пароля"
@@ -171,7 +184,7 @@ def write_config(record, data, host, user, password):
             "network_caching_ms": 300,
             "use_tcp": True,
         }
-    path = os.path.join(BASE_DIR, "config.json")
+    path = paths.config_path()
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(config, fh, indent=2, ensure_ascii=False)
     head("КОНФИГУРАЦИЯ")
@@ -258,7 +271,7 @@ def make_report(data):
         },
     }
 
-    directory = os.path.join(BASE_DIR, "reports")
+    directory = paths.reports_dir()
     os.makedirs(directory, exist_ok=True)
     path = os.path.join(directory, "%s.json" % record_id)
     with open(path, "w", encoding="utf-8") as fh:
@@ -275,10 +288,132 @@ def make_report(data):
     print("   4. Отправьте pull request. Подробности в CONTRIBUTING.md")
 
 
+def run_scan(cidr, user, password, verify):
+    """Обход подсети: находит все камеры и сводит их в таблицу."""
+    head("СКАНИРОВАНИЕ ПОДСЕТИ %s" % cidr)
+
+    state = {"last": -1}
+
+    def progress(done, total):
+        percent = done * 100 // total
+        if percent != state["last"] and percent % 10 == 0:
+            state["last"] = percent
+            print("  проверено %d%% (%d из %d)" % (percent, done, total))
+
+    candidates = fingerprint.scan_subnet(cidr, progress=progress)
+    print("\n  Устройств с открытыми портами камер: %d" % len(candidates))
+    if not candidates:
+        print("  Ничего не найдено. Проверьте, та ли это подсеть.")
+        return 1
+
+    # WS-Discovery заранее говорит, у кого есть ONVIF и на каком порту.
+    # Без этого пришлось бы вслепую долбиться в каждый открытый HTTP-порт,
+    # а неудачный ONVIF-запрос стоит несколько секунд.
+    print("  Спрашиваю, кто отзывается по ONVIF …")
+    onvif_by_host = {}
+    for address in fingerprint.discover_onvif(timeout=4) or []:
+        try:
+            hostport = address.split("://", 1)[1].split("/", 1)[0]
+            host, _, port = hostport.partition(":")
+            onvif_by_host[host] = int(port) if port else 80
+        except (IndexError, ValueError):
+            continue
+    if onvif_by_host:
+        print("  Ответили: %s" % ", ".join(sorted(onvif_by_host)))
+
+    records = camdb.load_db()
+
+    def inspect(item):
+        host = item["host"]
+        if host in onvif_by_host:
+            onvif_ports = [onvif_by_host[host]]
+        elif 8899 in item["open_ports"]:
+            onvif_ports = [8899]
+        else:
+            onvif_ports = []  # молчит по discovery и нет типового порта — не тратим время
+        data = fingerprint.build(
+            host, user, password, deep=False,
+            known_ports=item["open_ports"], onvif_ports=onvif_ports)
+        data["protocol"] = item.get("protocol")
+        return host, data
+
+    print("  Опрашиваю найденные устройства …")
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        inspected = list(pool.map(inspect, candidates))
+
+    rows = []
+    for host, data in inspected:
+        matches = camdb.identify(data, records)
+
+        record = matches[0][0] if matches else None
+        streams = [s for s in data.get("rtsp_streams", []) if s["status"] == 200]
+
+        onvif = data.get("onvif") or {}
+        # Камерой считаем только то, что говорит по RTSP или отвечает по ONVIF.
+        # Устройство с одним лишь HTTP — обычно роутер, принтер или NAS.
+        is_camera = bool(streams or onvif or data.get("protocol") == "rtsp")
+
+        if streams:
+            status = "поток доступен"
+        elif record and record.get("unlock", {}).get("status") == "hidden-onvif":
+            status = "нужно включить ONVIF"
+        elif onvif:
+            status = "ONVIF есть, потока нет"
+        elif is_camera:
+            status = "закрыта"
+        else:
+            status = "не похоже на камеру"
+        rows.append({
+            "host": host,
+            "mac": data.get("mac") or "?",
+            "model": (record["display_name"] if record
+                      else (onvif.get("model") or "неизвестно")),
+            "firmware": onvif.get("firmware") or "?",
+            "status": status,
+            "stream": streams[0]["url"] if streams else "",
+            "known": bool(record),
+            "is_camera": is_camera,
+        })
+
+    head("НАЙДЕННЫЕ КАМЕРЫ")
+    print("  %-15s %-18s %-34s %-22s" % ("АДРЕС", "MAC", "МОДЕЛЬ", "СОСТОЯНИЕ"))
+    for row in rows:
+        model = row["model"]
+        if len(model) > 33:
+            model = model[:30] + "..."
+        print("  %-15s %-18s %-34s %-22s" % (row["host"], row["mac"], model, row["status"]))
+
+    ready = [r for r in rows if r["stream"]]
+    if ready:
+        head("ГОТОВЫЕ АДРЕСА ПОТОКОВ")
+        for row in ready:
+            print("  %s" % row["stream"])
+
+    unknown = [r for r in rows if not r["known"] and r["is_camera"]]
+    if unknown:
+        head("НЕТ В БАЗЕ")
+        for row in unknown:
+            print("  %s (%s, прошивка %s)" % (row["host"], row["model"], row["firmware"]))
+        print("\n  Помогите пополнить базу:")
+        print("  python probe.py %s --report" % unknown[0]["host"])
+
+    cameras = [r for r in rows if r["is_camera"]]
+    head("ИТОГ")
+    print("  Камер: %d, из них с доступным потоком: %d" % (len(cameras), len(ready)))
+    others = len(rows) - len(cameras)
+    if others:
+        print("  Прочих устройств (не камеры): %d" % others)
+    return 0 if ready else 1
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Диагностика IP-камеры: опознавание модели и поиск потоков")
-    parser.add_argument("host", help="IP камеры в вашей локальной сети")
+    parser.add_argument("host", nargs="?",
+                        help="IP камеры в вашей локальной сети")
+    parser.add_argument("--scan", metavar="CIDR",
+                        help="обойти подсеть целиком, например 192.168.1.0/24")
     parser.add_argument("--user", default="admin", help="логин ONVIF")
     parser.add_argument("--password", default="", help="пароль ONVIF")
     parser.add_argument("--write-config", action="store_true",
@@ -296,6 +431,12 @@ def main():
             stream.reconfigure(encoding="utf-8")
         except Exception:
             pass
+
+    if not args.host and not args.scan:
+        parser.error("укажите IP камеры либо подсеть через --scan")
+
+    if args.scan:
+        return run_scan(args.scan, args.user, args.password, not args.no_verify)
 
     if args.discover:
         head("ПОИСК ONVIF-УСТРОЙСТВ В СЕТИ")
