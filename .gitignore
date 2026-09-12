@@ -26,3 +26,7 @@ reports/
 build/
 dist/
 *.spec
+
+# Конфиги VPN: содержат приватные ключи
+vpn/*.conf
+vpn/*-qr.png
