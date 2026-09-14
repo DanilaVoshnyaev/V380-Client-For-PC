@@ -1,0 +1,6 @@
+# Кнопка Sponsor вверху репозитория.
+#
+# GitHub Sponsors тут недоступен: он требует Stripe Connect, а Stripe не
+# работает с юрисдикцией автора. Поле custom принимает произвольные ссылки
+# и от этого не зависит — ведём на DONATE.md с криптоадресом.
+custom: ["https://github.com/DanilaVoshnyaev/V380-Client-For-PC/blob/main/DONATE.md"]

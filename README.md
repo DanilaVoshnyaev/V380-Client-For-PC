@@ -179,6 +179,15 @@ saves the next person an evening of forum archaeology. See
 Entries with status `closed` — "there is no standard way in" — are valuable
 too. They save people from trying.
 
+## Support the project
+
+The project is free and stays free. If it saved you an evening, there is a
+wallet in [DONATE.md](DONATE.md) — entirely optional, and nothing is owed in
+return.
+
+Adding your camera to the database is worth more than money, and costs one
+command.
+
 ## License
 
 Code — [MIT](LICENSE). Take it and do what you like.
