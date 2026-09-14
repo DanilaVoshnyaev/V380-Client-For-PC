@@ -11,6 +11,10 @@ import sys
 
 DEFAULT_PORTS = [80, 81, 443, 554, 8000, 8080, 8081, 8554, 8899, 9000, 34567]
 
+# Сколько секунд принимать поток при честной проверке. Вынесено, потому что
+# по этому же числу считается скорость в КБ/с — делитель не должен разъехаться.
+VERIFY_SECONDS = 5
+
 # Пути потоков, встречающиеся у разных прошивок. Проверяются, только если
 # ONVIF не сообщил адреса сам.
 COMMON_RTSP_PATHS = [
@@ -169,9 +173,11 @@ def find_rtsp_streams(host, port=554, paths=None, timeout=4):
     catch_all = bool(control and control["status"] == 200)
 
     if catch_all and not explicit:
-        control["path"] = "(любой путь)"
+        # Маркер, а не текст для показа: язык вывода решается выше по стеку
+        control["path"] = "*"
         control["url"] = "rtsp://%s:%d/" % (host, port)
         control["catch_all"] = True
+        control["catch_all_only"] = True
         return [control]
 
     working = []
@@ -193,7 +199,7 @@ def find_rtsp_streams(host, port=554, paths=None, timeout=4):
     return working
 
 
-def verify_stream(host, port, path, seconds=5):
+def verify_stream(host, port, path, seconds=VERIFY_SECONDS):
     """
     Честная проверка: полное рукопожатие RTSP и приём RTP-пакетов.
     Не требует видеовыхода, поэтому работает и без окна.

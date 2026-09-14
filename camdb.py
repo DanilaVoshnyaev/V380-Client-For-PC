@@ -7,6 +7,7 @@ pull request не конфликтуют между собой.
 import json
 import os
 
+import i18n
 import paths
 
 BASE_DIR = paths.app_dir()
@@ -27,12 +28,11 @@ WEIGHTS = {
 # Порог, ниже которого совпадение считается недостоверным
 MIN_SCORE = 35
 
-STATUS_TEXT = {
-    "open": "работает сразу, ничего включать не нужно",
-    "hidden-onvif": "ONVIF есть, но выключен — включается в приложении вендора",
-    "closed": "штатных способов получить поток нет",
-    "firmware-mod": "только сменой прошивки",
-}
+def status_text(status):
+    """Описание статуса доступа на языке вывода. Неизвестный — как есть."""
+    key = "status_%s" % status
+    text = i18n.t(key)
+    return status if text == key else text
 
 
 def load_db(directory=None):
@@ -144,7 +144,7 @@ def stream_urls(record, host):
 def describe(record):
     """Краткое человекочитаемое описание записи."""
     status = (record.get("unlock") or {}).get("status", "?")
-    return "%s — %s" % (record["display_name"], STATUS_TEXT.get(status, status))
+    return "%s — %s" % (record["display_name"], status_text(status))
 
 
 def as_config(record, host, user="admin", password=""):

@@ -31,6 +31,8 @@ Write out a config for the client:
 
     python probe.py 192.168.1.100 --write-config
 
+Output language follows your system. Force it with `--lang en` or `--lang ru`.
+
 ## Sweep a whole site at once
 
     python probe.py --scan 192.168.1.0/24
@@ -108,6 +110,7 @@ Snapshots and recordings go to `save_dir` from `config.json`
 | `probe.py` | Camera identification, stream discovery, database draft |
 | `fingerprint.py` | Network fingerprinting: ports, banners, MAC, ONVIF |
 | `camdb.py` | Loading the database and weighted trait matching |
+| `i18n.py` | Output messages in English and Russian |
 | `client.py` | Application window, UI, hotkeys |
 | `camera.py` | Talking to the camera: ONVIF, stream profiles, PTZ |
 | `tools/validate_db.py` | Database validation, runs in CI on every PR |

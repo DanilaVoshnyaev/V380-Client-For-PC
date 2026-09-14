@@ -19,7 +19,8 @@ VALID_STATUS = {"open", "hidden-onvif", "closed", "firmware-mod"}
 ID_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9.]+)*$")
 MAC_RE = re.compile(r"^([0-9A-F]{2}:){2}[0-9A-F]{2}$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-PLACEHOLDER = "ЗАПОЛНИТЕ"
+# probe.py помечает незаполненные поля на языке пользователя — ловим оба
+PLACEHOLDERS = ("ЗАПОЛНИТЕ", "FILL IN")
 
 
 class Report:
@@ -108,8 +109,9 @@ def check_record(record, filename, report, top_keys, schema):
 
     # незаполненные заготовки
     blob = json.dumps(record, ensure_ascii=False)
-    if PLACEHOLDER in blob:
-        report.error(where, "остались незаполненные поля с пометкой '%s'" % PLACEHOLDER)
+    for marker in PLACEHOLDERS:
+        if marker in blob:
+            report.error(where, "остались незаполненные поля с пометкой '%s'" % marker)
 
 
 def main():

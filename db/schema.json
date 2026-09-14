@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Запись о модели камеры",
-  "description": "Один файл — одна модель/прошивка. Так правки из разных pull request не конфликтуют.",
+  "description": "Один файл — одна модель/прошивка. Так правки из разных pull request не конфликтуют. Человекочитаемые поля (display_name, unlock.steps, app_path, notes) пишутся по-английски: база показывается как есть на любом языке интерфейса.",
   "type": "object",
   "required": ["id", "display_name", "match", "unlock", "verified"],
   "additionalProperties": false,

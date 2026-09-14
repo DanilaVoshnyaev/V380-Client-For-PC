@@ -7,6 +7,8 @@
     python probe.py 192.168.1.100 --write-config     # записать config.json
     python probe.py 192.168.1.100 --report           # заготовка записи для базы
 
+Язык вывода определяется по системе, принудительно — ключом --lang en|ru.
+
 Работает только с устройствами в вашей собственной сети.
 """
 import argparse
@@ -17,6 +19,8 @@ import sys
 
 import camdb
 import fingerprint
+import i18n
+from i18n import t
 
 import paths
 
@@ -29,121 +33,132 @@ def head(text):
     print("-" * max(len(text), 30))
 
 
+def line(text, indent=2):
+    print(" " * indent + text)
+
+
+def field(label, value, indent=2):
+    """Поле отпечатка. Двоеточия выстраиваются в столбик на любом языке."""
+    print("%s%-*s: %s" % (" " * indent, i18n.COLUMN - indent, label, value))
+
+
 def show_fingerprint(data):
-    head("ОТПЕЧАТОК УСТРОЙСТВА")
-    ports = ", ".join(str(p) for p in data["open_ports"]) or "нет открытых"
-    print("  Адрес           : %s" % data["host"])
-    print("  MAC             : %s" % (data["mac"] or "не определён"))
-    print("  Открытые порты  : %s" % ports)
+    head(t("hdr_fingerprint"))
+    ports = ", ".join(str(p) for p in data["open_ports"]) or t("val_no_open_ports")
+    field(t("lbl_address"), data["host"])
+    field(t("lbl_mac"), data["mac"] or t("val_mac_unknown"))
+    field(t("lbl_open_ports"), ports)
     if data["http_server"]:
-        print("  HTTP Server     : %s" % data["http_server"])
+        field(t("lbl_http_server"), data["http_server"])
     if data["rtsp_banner"]:
-        print("  Баннер RTSP     : %s" % data["rtsp_banner"])
+        field(t("lbl_rtsp_banner"), data["rtsp_banner"])
 
     onvif = data.get("onvif")
     if onvif:
-        print("  ONVIF           : порт %s" % onvif["port"])
-        print("    производитель : %s" % onvif["manufacturer"])
-        print("    модель        : %s" % onvif["model"])
-        print("    прошивка      : %s" % onvif["firmware"])
-        print("    PTZ           : %s" % ("есть" if onvif["ptz"] else "нет"))
+        field(t("lbl_onvif"), t("val_onvif_port", onvif["port"]))
+        field(t("lbl_manufacturer"), onvif["manufacturer"], indent=4)
+        field(t("lbl_model"), onvif["model"], indent=4)
+        field(t("lbl_firmware"), onvif["firmware"], indent=4)
+        field(t("lbl_ptz"), t("val_yes") if onvif["ptz"] else t("val_no"), indent=4)
         for profile in onvif["profiles"]:
-            print("    профиль %-12s %sx%s" % (
-                profile["token"], profile["width"], profile["height"]))
+            line(t("val_profile", profile["token"],
+                   profile["width"], profile["height"]), indent=4)
     else:
-        print("  ONVIF           : не отвечает")
+        field(t("lbl_onvif"), t("val_onvif_silent"))
 
 
 def show_match(results):
-    head("ОПОЗНАВАНИЕ ПО БАЗЕ")
+    head(t("hdr_match"))
     if not results:
-        print("  Модель в базе не найдена.")
-        print("  Помогите её пополнить: запустите с ключом --report,")
-        print("  и приложите получившийся файл к pull request.")
+        line(t("match_none_1"))
+        line(t("match_none_2"))
+        line(t("match_none_3"))
         return None
 
     record, points, reasons = results[0]
-    print("  %s" % record["display_name"])
-    print("  Совпадение: %d очков (%s)" % (points, ", ".join(reasons)))
+    line(record["display_name"])
+    line(t("match_score", points, ", ".join(reasons)))
     if record.get("aliases"):
-        print("  Также продаётся как: %s" % ", ".join(record["aliases"]))
+        line(t("match_aliases", ", ".join(record["aliases"])))
     if record.get("cloud_app"):
-        print("  Родное приложение  : %s" % record["cloud_app"])
+        line(t("match_cloud_app", record["cloud_app"]))
 
     for other, other_points, _ in results[1:3]:
-        print("  Похоже также на    : %s (%d)" % (other["display_name"], other_points))
+        line(t("match_also_like", other["display_name"], other_points))
     return record
 
 
 def show_unlock(record, already_open=False):
     unlock = record.get("unlock", {})
     status = unlock.get("status")
-    head("ДОСТУП К ПОТОКУ")
+    head(t("hdr_access"))
 
     if already_open:
-        print("  Статус: всё уже включено, камера отдаёт поток.")
+        line(t("unlock_all_open"))
         if status == "hidden-onvif":
-            print("  (у этой модели ONVIF выключен с завода — у вас он включён)")
+            line(t("unlock_hidden_note"))
         return
 
-    print("  Статус: %s" % camdb.STATUS_TEXT.get(status, status))
+    line(t("unlock_status", camdb.status_text(status)))
 
     if status == "hidden-onvif":
         if unlock.get("app_path"):
-            print("  Где включать: %s" % unlock["app_path"])
+            line(t("unlock_where", unlock["app_path"]))
         print()
         for number, step in enumerate(unlock.get("steps", []), 1):
-            print("  %d. %s" % (number, step))
+            line("%d. %s" % (number, step))
         if unlock.get("requires_reboot"):
-            print("\n  Обязательно перезагрузите камеру после сохранения.")
+            print()
+            line(t("unlock_reboot"))
     elif status == "closed":
-        print("  Стандартными средствами поток получить нельзя.")
-        print("  Остаётся приложение вендора либо смена прошивки.")
+        line(t("unlock_closed_1"))
+        line(t("unlock_closed_2"))
     elif status == "firmware-mod":
-        print("  Требуется смена прошивки. Риск вывести камеру из строя.")
+        line(t("unlock_firmware"))
 
 
 def show_streams(data, record, host, verify):
-    head("ПОТОКИ")
+    head(t("hdr_streams"))
     streams = data.get("rtsp_streams") or []
 
     if not streams and record:
-        print("  Сейчас недоступны. По базе у этой модели должны быть:")
+        line(t("streams_db_expected"))
         for item in camdb.stream_urls(record, host):
-            print("    %s  %s" % (item["url"], item["resolution"]))
+            line("%s  %s" % (item["url"], item["resolution"]), indent=4)
         return []
 
     if not streams:
-        print("  Не найдено. Вероятно, RTSP выключен.")
+        line(t("streams_none"))
         return []
 
-    if len(streams) == 1 and streams[0].get("path") == "(любой путь)":
-        print("  Сервер отдаёт поток на ЛЮБОЙ путь, включая несуществующий,")
-        print("  поэтому перебором точный адрес не выяснить.")
+    # Прошивка отдаёт поток на любой путь — перебором адрес не выяснить
+    if len(streams) == 1 and streams[0].get("catch_all_only"):
+        line(t("streams_catch_all_1"))
+        line(t("streams_catch_all_2"))
         if record:
-            print("  По базе у этой модели пути такие:")
+            line(t("streams_db_paths"))
             for item in camdb.stream_urls(record, host):
-                print("    %s  %s" % (item["url"], item["resolution"]))
+                line("%s  %s" % (item["url"], item["resolution"]), indent=4)
         else:
-            print("  Точные пути даст ONVIF — включите его и повторите проверку.")
+            line(t("streams_onvif_hint"))
         return []
 
     working = []
     for stream in streams:
-        mark = "нужен пароль" if stream["auth_required"] else "без пароля"
+        mark = t("stream_auth_required") if stream["auth_required"] else t("stream_no_auth")
         codecs = ", ".join(stream["codecs"]) or "?"
-        print("  %s" % stream["url"])
-        print("      %s | кодеки: %s" % (mark, codecs))
+        line(stream["url"])
+        line(t("stream_detail", mark, codecs), indent=6)
 
         if verify and not stream["auth_required"]:
             total, error = fingerprint.verify_stream(host, 554, stream["path"])
             if error:
-                print("      проверка: ошибка - %s" % error)
+                line(t("verify_error", error), indent=6)
             elif total > 20000:
-                print("      проверка: поток идёт, ~%d КБ/с" % (total / 5 / 1024))
+                line(t("verify_ok", total / fingerprint.VERIFY_SECONDS / 1024), indent=6)
                 working.append(stream)
             else:
-                print("      проверка: данные не поступают")
+                line(t("verify_nodata"), indent=6)
         else:
             working.append(stream)
     return working
@@ -153,19 +168,18 @@ def show_security(data, record):
     warnings = []
     streams = data.get("rtsp_streams") or []
     if any(s["status"] == 200 and not s["auth_required"] for s in streams):
-        warnings.append(
-            "RTSP отдаёт поток без авторизации - его может смотреть любой в вашей сети.")
+        warnings.append(t("sec_no_auth"))
     if record:
         security = record.get("security") or {}
         if security.get("notes"):
             warnings.append(security["notes"])
     if not warnings:
         return
-    head("БЕЗОПАСНОСТЬ")
+    head(t("hdr_security"))
     for text in warnings:
-        print("  * %s" % text)
-    print("  * Не пробрасывайте порты камеры наружу. Для доступа из другой сети")
-    print("    используйте VPN, например WireGuard на роутере.")
+        line("* %s" % text)
+    line("* " + t("sec_no_forward_1"))
+    line(t("sec_no_forward_2"), indent=4)
 
 
 def write_config(record, data, host, user, password):
@@ -187,9 +201,9 @@ def write_config(record, data, host, user, password):
     path = paths.config_path()
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(config, fh, indent=2, ensure_ascii=False)
-    head("КОНФИГУРАЦИЯ")
-    print("  Записан %s" % path)
-    print("  Запускайте клиент: python client.py")
+    head(t("hdr_config"))
+    line(t("cfg_written", path))
+    line(t("cfg_run_client"))
 
 
 def make_report(data):
@@ -236,18 +250,19 @@ def make_report(data):
         "ports": data.get("open_ports", []),
     }
 
+    fill = t("fill_in")
     report = {
         "id": record_id,
         "display_name": "%s %s" % (onvif.get("manufacturer") or "?",
                                    onvif.get("model") or "?"),
-        "aliases": ["ЗАПОЛНИТЕ: под каким брендом продаётся"],
-        "cloud_app": "ЗАПОЛНИТЕ: название мобильного приложения вендора",
+        "aliases": [t("ph_aliases", fill)],
+        "cloud_app": t("ph_cloud_app", fill),
         "match": {key: value for key, value in match.items() if value},
         "unlock": {
             "status": "hidden-onvif",
-            "app_path": "ЗАПОЛНИТЕ: где в приложении включается ONVIF",
+            "app_path": t("ph_app_path", fill),
             "requires_reboot": True,
-            "steps": ["ЗАПОЛНИТЕ: по шагу на строку"],
+            "steps": [t("ph_steps", fill)],
         },
         "onvif": {
             "port": onvif.get("port", 8899),
@@ -266,7 +281,7 @@ def make_report(data):
         "security": {"rtsp_without_auth": open_without_auth},
         "verified": {
             "date": datetime.date.today().isoformat(),
-            "by": "ЗАПОЛНИТЕ: ваш GitHub-ник",
+            "by": t("ph_by", fill),
             "tool_version": TOOL_VERSION,
         },
     }
@@ -277,20 +292,20 @@ def make_report(data):
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(report, fh, indent=2, ensure_ascii=False)
 
-    head("ЗАГОТОВКА ДЛЯ БАЗЫ")
-    print("  Файл: %s" % path)
-    print("  В нём нет ни вашего IP, ни паролей - только признаки модели.")
+    head(t("hdr_report"))
+    line(t("rpt_file", path))
+    line(t("rpt_no_personal"))
     print()
-    print("  Что дальше:")
-    print("   1. Заполните поля, помеченные ЗАПОЛНИТЕ.")
-    print("   2. Перенесите файл в db/devices/")
-    print("   3. Проверьте: python tools/validate_db.py")
-    print("   4. Отправьте pull request. Подробности в CONTRIBUTING.md")
+    line(t("rpt_next"))
+    line(t("rpt_step1", fill))
+    line(t("rpt_step2"))
+    line(t("rpt_step3"))
+    line(t("rpt_step4"))
 
 
-def run_scan(cidr, user, password, verify):
+def run_scan(cidr, user, password):
     """Обход подсети: находит все камеры и сводит их в таблицу."""
-    head("СКАНИРОВАНИЕ ПОДСЕТИ %s" % cidr)
+    head(t("hdr_scan", cidr))
 
     state = {"last": -1}
 
@@ -298,18 +313,19 @@ def run_scan(cidr, user, password, verify):
         percent = done * 100 // total
         if percent != state["last"] and percent % 10 == 0:
             state["last"] = percent
-            print("  проверено %d%% (%d из %d)" % (percent, done, total))
+            line(t("scan_progress", percent, done, total))
 
     candidates = fingerprint.scan_subnet(cidr, progress=progress)
-    print("\n  Устройств с открытыми портами камер: %d" % len(candidates))
+    print()
+    line(t("scan_devices_found", len(candidates)))
     if not candidates:
-        print("  Ничего не найдено. Проверьте, та ли это подсеть.")
+        line(t("scan_nothing"))
         return 1
 
     # WS-Discovery заранее говорит, у кого есть ONVIF и на каком порту.
     # Без этого пришлось бы вслепую долбиться в каждый открытый HTTP-порт,
     # а неудачный ONVIF-запрос стоит несколько секунд.
-    print("  Спрашиваю, кто отзывается по ONVIF …")
+    line(t("scan_asking_onvif"))
     onvif_by_host = {}
     for address in fingerprint.discover_onvif(timeout=4) or []:
         try:
@@ -319,7 +335,7 @@ def run_scan(cidr, user, password, verify):
         except (IndexError, ValueError):
             continue
     if onvif_by_host:
-        print("  Ответили: %s" % ", ".join(sorted(onvif_by_host)))
+        line(t("scan_answered", ", ".join(sorted(onvif_by_host))))
 
     records = camdb.load_db()
 
@@ -337,7 +353,7 @@ def run_scan(cidr, user, password, verify):
         data["protocol"] = item.get("protocol")
         return host, data
 
-    print("  Опрашиваю найденные устройства …")
+    line(t("scan_querying"))
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=8) as pool:
         inspected = list(pool.map(inspect, candidates))
@@ -355,20 +371,20 @@ def run_scan(cidr, user, password, verify):
         is_camera = bool(streams or onvif or data.get("protocol") == "rtsp")
 
         if streams:
-            status = "поток доступен"
+            status = t("st_stream_available")
         elif record and record.get("unlock", {}).get("status") == "hidden-onvif":
-            status = "нужно включить ONVIF"
+            status = t("st_enable_onvif")
         elif onvif:
-            status = "ONVIF есть, потока нет"
+            status = t("st_onvif_no_stream")
         elif is_camera:
-            status = "закрыта"
+            status = t("st_closed")
         else:
-            status = "не похоже на камеру"
+            status = t("st_not_camera")
         rows.append({
             "host": host,
             "mac": data.get("mac") or "?",
             "model": (record["display_name"] if record
-                      else (onvif.get("model") or "неизвестно")),
+                      else (onvif.get("model") or t("val_unknown_model"))),
             "firmware": onvif.get("firmware") or "?",
             "status": status,
             "stream": streams[0]["url"] if streams else "",
@@ -376,8 +392,9 @@ def run_scan(cidr, user, password, verify):
             "is_camera": is_camera,
         })
 
-    head("НАЙДЕННЫЕ КАМЕРЫ")
-    print("  %-15s %-18s %-34s %-22s" % ("АДРЕС", "MAC", "МОДЕЛЬ", "СОСТОЯНИЕ"))
+    head(t("hdr_found"))
+    print("  %-15s %-18s %-34s %-22s" % (t("col_address"), t("col_mac"),
+                                         t("col_model"), t("col_state")))
     for row in rows:
         model = row["model"]
         if len(model) > 33:
@@ -386,67 +403,80 @@ def run_scan(cidr, user, password, verify):
 
     ready = [r for r in rows if r["stream"]]
     if ready:
-        head("ГОТОВЫЕ АДРЕСА ПОТОКОВ")
+        head(t("hdr_ready"))
         for row in ready:
-            print("  %s" % row["stream"])
+            line(row["stream"])
 
     unknown = [r for r in rows if not r["known"] and r["is_camera"]]
     if unknown:
-        head("НЕТ В БАЗЕ")
+        head(t("hdr_unknown"))
         for row in unknown:
-            print("  %s (%s, прошивка %s)" % (row["host"], row["model"], row["firmware"]))
-        print("\n  Помогите пополнить базу:")
-        print("  python probe.py %s --report" % unknown[0]["host"])
+            line(t("unknown_row", row["host"], row["model"], row["firmware"]))
+        print()
+        line(t("unknown_help"))
+        line("python probe.py %s --report" % unknown[0]["host"])
 
     cameras = [r for r in rows if r["is_camera"]]
-    head("ИТОГ")
-    print("  Камер: %d, из них с доступным потоком: %d" % (len(cameras), len(ready)))
+    head(t("hdr_summary"))
+    line(t("sum_cameras", len(cameras), len(ready)))
     others = len(rows) - len(cameras)
     if others:
-        print("  Прочих устройств (не камеры): %d" % others)
+        line(t("sum_others", others))
     return 0 if ready else 1
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Диагностика IP-камеры: опознавание модели и поиск потоков")
-    parser.add_argument("host", nargs="?",
-                        help="IP камеры в вашей локальной сети")
-    parser.add_argument("--scan", metavar="CIDR",
-                        help="обойти подсеть целиком, например 192.168.1.0/24")
-    parser.add_argument("--user", default="admin", help="логин ONVIF")
-    parser.add_argument("--password", default="", help="пароль ONVIF")
-    parser.add_argument("--write-config", action="store_true",
-                        help="записать config.json для клиента")
-    parser.add_argument("--report", action="store_true",
-                        help="создать заготовку записи для базы устройств")
-    parser.add_argument("--no-verify", action="store_true",
-                        help="не проверять потоки приёмом данных")
-    parser.add_argument("--discover", action="store_true",
-                        help="найти ONVIF-камеры в сети перед сканированием")
-    args = parser.parse_args()
+def pick_language(argv):
+    """
+    Язык нужен до сборки парсера: иначе --help выйдет не на том языке.
+    Поэтому --lang вычитываем из argv вручную, до argparse.
+    """
+    value = None
+    for index, item in enumerate(argv):
+        if item == "--lang" and index + 1 < len(argv):
+            value = argv[index + 1]
+        elif item.startswith("--lang="):
+            value = item.split("=", 1)[1]
+    return i18n.set_language(value)
 
+
+def main():
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8")
         except Exception:
             pass
 
+    pick_language(sys.argv[1:])
+
+    parser = argparse.ArgumentParser(description=t("arg_description"))
+    parser.add_argument("host", nargs="?", help=t("arg_host"))
+    parser.add_argument("--scan", metavar="CIDR", help=t("arg_scan"))
+    parser.add_argument("--user", default="admin", help=t("arg_user"))
+    parser.add_argument("--password", default="", help=t("arg_password"))
+    parser.add_argument("--write-config", action="store_true",
+                        help=t("arg_write_config"))
+    parser.add_argument("--report", action="store_true", help=t("arg_report"))
+    parser.add_argument("--no-verify", action="store_true", help=t("arg_no_verify"))
+    parser.add_argument("--discover", action="store_true", help=t("arg_discover"))
+    parser.add_argument("--lang", choices=("en", "ru", "auto"), default="auto",
+                        help=t("arg_lang"))
+    args = parser.parse_args()
+
     if not args.host and not args.scan:
-        parser.error("укажите IP камеры либо подсеть через --scan")
+        parser.error(t("err_need_target"))
 
     if args.scan:
-        return run_scan(args.scan, args.user, args.password, not args.no_verify)
+        return run_scan(args.scan, args.user, args.password)
 
     if args.discover:
-        head("ПОИСК ONVIF-УСТРОЙСТВ В СЕТИ")
+        head(t("hdr_discover"))
         addresses = fingerprint.discover_onvif()
         for address in addresses or []:
-            print("  %s" % address)
+            line(address)
         if not addresses:
-            print("  никто не ответил")
+            line(t("discover_none"))
 
-    print("\nСканирую %s ..." % args.host)
+    print("\n" + t("scanning", args.host))
     data = fingerprint.build(args.host, args.user, args.password)
 
     show_fingerprint(data)
@@ -464,18 +494,18 @@ def main():
     if args.report:
         make_report(data)
 
-    head("ИТОГ")
+    head(t("hdr_summary"))
     if working:
-        print("  Камера пригодна для сторонних клиентов.")
-        print("  Рабочий адрес: %s" % working[0]["url"])
+        line(t("final_usable"))
+        line(t("final_url", working[0]["url"]))
         if not args.write_config:
-            print("  Записать настройки: python probe.py %s --write-config" % args.host)
+            line(t("final_write_cfg", args.host))
         return 0
     if record and record.get("unlock", {}).get("status") == "hidden-onvif":
-        print("  Поток закрыт, но у этой модели ONVIF включается в приложении.")
-        print("  Выполните шаги выше, перезагрузите камеру и запустите проверку снова.")
+        line(t("final_hidden_1"))
+        line(t("final_hidden_2"))
         return 1
-    print("  Стандартный поток получить не удалось.")
+    line(t("final_failed"))
     return 1
 
 
