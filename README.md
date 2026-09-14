@@ -1,165 +1,187 @@
-# Освобождение дешёвых IP-камер из облака
+*[Русская версия](README.ru.md)*
 
-Дешёвые китайские камеры продаются под десятками брендов, но внутри у них
-несколько одинаковых прошивок. У многих **ONVIF и RTSP есть, просто выключены
-с завода** — и тогда камера работает с VLC, Home Assistant, Frigate, Blue Iris
-и чем угодно ещё, без облака вендора и без Android-эмулятора на компьютере.
+# Free your cheap IP camera from the vendor cloud
 
-Проблема в том, что информация «у этой модели ONVIF включается вот здесь»
-разбросана по форумам обрывками. Этот проект её собирает.
+Cheap Chinese cameras are sold under dozens of brands, but inside they run
+a handful of identical firmwares. **Many of them do have ONVIF and RTSP —
+just switched off at the factory.** Turn it back on and the camera works with
+VLC, Home Assistant, Frigate, Blue Iris, Scrypted and anything else. No vendor
+cloud, no phone app, no Android emulator on your desktop.
 
-Две части:
+The catch is that "on this model ONVIF is enabled *here*" is scattered across
+forum posts in fragments. This project collects it.
 
-1. **База отпечатков** (`db/devices/`) — модель и прошивка → есть ли скрытый
-   ONVIF, где он включается, какие пути потоков и порты.
-2. **Инструменты** — `probe.py` опознаёт камеру по сети и выдаёт инструкцию,
-   `client.py` показывает видео и управляет поворотом.
+Two parts:
 
-## Опознать свою камеру
+1. **A fingerprint database** (`db/devices/`) — model and firmware → is there
+   a hidden ONVIF, where it is enabled, which stream paths and ports it uses.
+2. **Tools** — `probe.py` identifies a camera over the network and prints what
+   to do next; `client.py` shows the video and drives pan/tilt/zoom.
 
-    python probe.py 192.168.1.100 --user admin --password ПАРОЛЬ
+## Identify your camera
 
-Инструмент просканирует порты, снимет отпечаток (баннеры RTSP и HTTP, MAC,
-данные ONVIF), найдёт модель в базе и скажет, что делать дальше. Если потоки
-уже доступны — проверит их приёмом данных и покажет рабочие адреса.
+    python probe.py 192.168.1.100 --user admin --password YOUR_PASSWORD
 
-Записать настройки для клиента:
+It scans ports, takes a fingerprint (RTSP and HTTP banners, MAC, ONVIF data),
+looks the model up in the database and tells you what to do. If streams are
+already reachable, it verifies them by actually receiving data and prints the
+working URLs.
+
+Write out a config for the client:
 
     python probe.py 192.168.1.100 --write-config
 
-## Обойти весь объект сразу
+## Sweep a whole site at once
 
     python probe.py --scan 192.168.1.0/24
 
-Находит все камеры в подсети, опознаёт модели и сводит в таблицу: что уже
-отдаёт поток, где нужно включить ONVIF, а что закрыто наглухо. Подсеть /24
-проходится примерно за полторы минуты.
+Finds every camera on the subnet, identifies the models and lays them out in
+one table: which ones already serve a stream, which need ONVIF switched on,
+and which are locked shut. A /24 takes about a minute and a half.
 
-    АДРЕС           MAC                МОДЕЛЬ                    СОСТОЯНИЕ
-    192.168.1.1     90:FB:5D:XX:XX:XX  неизвестно                не похоже на камеру
-    192.168.1.100   4C:2F:7B:XX:XX:XX  V380 / Galatron PTZ       поток доступен
+    ADDRESS         MAC                MODEL                     STATE
+    192.168.1.1     90:FB:5D:XX:XX:XX  unknown                   not a camera
+    192.168.1.100   4C:2F:7B:XX:XX:XX  V380 / Galatron PTZ       stream available
 
-Устройство должно не просто держать порт открытым, а действительно отвечать
-по RTSP или HTTP. Без этой проверки в сетях с Docker, WSL или VPN сканирование
-«находит» сотни несуществующих камер: там соединение устанавливается с любым
-адресом.
+A device has to actually *answer* over RTSP or HTTP, not merely hold a port
+open. Without that check, scanning a network with Docker, WSL or a VPN on it
+"finds" hundreds of cameras that do not exist: there, a TCP connection
+succeeds against any address at all.
 
-Камеры нет в базе? Пришлите её — одна команда:
+## Which cameras are supported
+
+**Any of them.** `probe.py` does not need your model to be in the database.
+It fingerprints the device, finds the streams, verifies them by receiving
+data and prints the working URLs — that works with any camera that speaks
+ONVIF or RTSP, from any vendor.
+
+The database answers a different question: *ONVIF is off — where exactly do
+I switch it on for this model?* You cannot learn that over the network. It
+can only be written down once, by someone who has the camera in their hands,
+and passed on.
+
+| Model | Firmware | Access | Vendor app |
+|---|---|---|---|
+| V380 / Galatron PTZ (macro-video) | 2.4 | ONVIF enabled from the app | V380 Pro |
+
+One entry so far. [Add yours](CONTRIBUTING.md) — one command and half an hour.
+
+Your camera is not in the database? Send it in:
 
     python probe.py 192.168.1.100 --report
 
-Подробности в [CONTRIBUTING.md](CONTRIBUTING.md). В заготовку не попадают
-ни ваш IP, ни пароли, ни серийный номер — только признаки модели.
-
-## Поддерживаемые камеры
-
-| Модель | Прошивка | Доступ | Приложение вендора |
-|---|---|---|---|
-| V380 / Galatron PTZ (macro-video) | 2.4 | ONVIF включается в приложении | V380 Pro |
-
-Список растёт из pull request. Добавьте свою.
+The generated draft contains **no IP address, no passwords and no serial
+number** — only model traits shared by every device of that kind. Details in
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
-# Клиент для Windows
+# Windows client
 
-Замена приложению вендора: живое видео и управление камерой напрямую по
-стандартным протоколам.
+A replacement for the vendor app: live video and camera control straight over
+standard protocols.
 
-## Запуск
+## Running it
 
-Двойной клик по `run.bat`, либо:
+Double-click `run.bat`, or:
 
     python client.py
 
-## Возможности
+## Features
 
-- Живое видео (H264 720p / 360p, переключение на лету)
-- PTZ: 8 направлений, зум, управление стрелками клавиатуры
-- Пресеты: сохранение текущей позиции и переход к ней
-- Снимок экрана (клавиша `S`)
-- Запись в MP4 (клавиша `R`) — идёт параллельно просмотру, не прерывая его
-- Полный экран — двойной клик по видео или `F`, выход — `Esc`
+- Live video (H264 720p / 360p, switch on the fly)
+- PTZ: 8 directions, zoom, arrow-key control
+- Presets: save the current position and return to it
+- Snapshot (`S`)
+- MP4 recording (`R`) — runs alongside the live view without interrupting it
+- Fullscreen — double-click the video or press `F`, leave with `Esc`
 
-Снимки и записи складываются в `save_dir` из `config.json`
-(по умолчанию `Пользователи\<вы>\Pictures\Camera`).
+Snapshots and recordings go to `save_dir` from `config.json`
+(by default `Users\<you>\Pictures\Camera`).
 
-## Файлы
+## Files
 
-| Файл | Назначение |
+| File | Purpose |
 |---|---|
-| `db/devices/*.json` | База отпечатков: одна модель — один файл |
-| `db/schema.json` | Схема записи базы |
-| `probe.py` | Опознавание камеры, поиск потоков, заготовка для базы |
-| `fingerprint.py` | Снятие сетевого отпечатка: порты, баннеры, MAC, ONVIF |
-| `camdb.py` | Загрузка базы и сопоставление по взвешенным признакам |
-| `client.py` | Окно приложения, интерфейс, горячие клавиши |
-| `camera.py` | Работа с камерой: ONVIF, профили потоков, PTZ |
-| `tools/validate_db.py` | Проверка базы, запускается в CI на каждый PR |
-| `config.json` | Ваши настройки подключения (в git не попадает) |
+| `db/devices/*.json` | Fingerprint database: one model per file |
+| `db/schema.json` | Schema for a database entry |
+| `probe.py` | Camera identification, stream discovery, database draft |
+| `fingerprint.py` | Network fingerprinting: ports, banners, MAC, ONVIF |
+| `camdb.py` | Loading the database and weighted trait matching |
+| `client.py` | Application window, UI, hotkeys |
+| `camera.py` | Talking to the camera: ONVIF, stream profiles, PTZ |
+| `tools/validate_db.py` | Database validation, runs in CI on every PR |
+| `config.json` | Your connection settings (never committed) |
 
-## Настройки (`config.json`)
+## Settings (`config.json`)
 
-    host                 IP камеры
-    onvif_port           порт ONVIF (у этой камеры 8899)
-    rtsp_port            порт RTSP (554)
-    user / password      учётные данные ONVIF
-    ptz_speed            скорость поворота, 0.1-1.0
-    save_dir             куда сохранять снимки и записи
-    network_caching_ms   буфер. Меньше - ниже задержка, больше - плавнее
-    use_tcp              RTSP поверх TCP. При потерях кадров оставьте true
+    host                 camera IP
+    onvif_port           ONVIF port (8899 on this camera)
+    rtsp_port            RTSP port (554)
+    user / password      ONVIF credentials
+    ptz_speed            pan/tilt speed, 0.1-1.0
+    save_dir             where snapshots and recordings go
+    network_caching_ms   buffer. Lower means less latency, higher means smoother
+    use_tcp              RTSP over TCP. Leave true if you drop frames
 
-## Прямые адреса камеры
+Copy `config.example.json` to `config.json` and fill in your values:
 
-    Поток 720p   rtsp://192.168.1.100:554/live/ch00_0
-    Поток 360p   rtsp://192.168.1.100:554/live/ch00_1
-    Снимок       http://192.168.1.100:8899/snapshot/PROFILE_000
-    ONVIF        http://192.168.1.100:8899/onvif/device_service
+    copy config.example.json config.json
 
-Эти же адреса принимают VLC, Agent DVR, Blue Iris, Frigate и Home Assistant.
+`config.json` is in `.gitignore` — it holds your camera password.
 
-## Требования
+## Direct camera URLs
 
-Python 3.12, установленный VLC (64-бит), пакеты:
+    720p stream   rtsp://192.168.1.100:554/live/ch00_0
+    360p stream   rtsp://192.168.1.100:554/live/ch00_1
+    Snapshot      http://192.168.1.100:8899/snapshot/PROFILE_000
+    ONVIF         http://192.168.1.100:8899/onvif/device_service
+
+The same URLs work in VLC, Agent DVR, Blue Iris, Frigate and Home Assistant.
+
+## Requirements
+
+Python 3.12, VLC installed (64-bit), and:
 
     pip install onvif-zeep WSDiscovery python-vlc
 
-## Сборка .exe
+## Building the .exe
 
-Чтобы инструментом могли пользоваться люди без Python:
+So that people without Python can use the tool:
 
     pip install pyinstaller
     python build.py
 
-В папке `dist/` появятся `CameraClient.exe` (около 20 МБ) и
-`CameraProbe.exe` (около 17 МБ).
+`dist/` will contain `CameraClient.exe` (~20 MB) and `CameraProbe.exe`
+(~17 MB), each with its SHA256 printed.
 
-VLC внутрь не упаковывается намеренно: он остаётся внешней зависимостью.
-Так честнее по лицензии — VLC распространяется под LGPL — и сборка не весит
-лишние сотни мегабайт. На компьютере пользователя должен быть установлен
-VLC той же разрядности, что и сборка.
+VLC is deliberately **not** bundled: it stays an external dependency. That is
+the honest reading of its LGPL license, and it keeps the build from gaining a
+few hundred megabytes. The user needs VLC installed, matching the build's
+architecture.
 
-## Замечание по безопасности
+## Security note
 
-RTSP-сервер камеры отдаёт поток **без авторизации** - любой в локальной сети может
-его смотреть. Не пробрасывайте порты 554 и 8899 наружу. Для доступа из другой сети
-поднимите VPN (WireGuard) на роутере.
+This camera's RTSP server serves the stream **without any authentication** —
+anyone on your local network can watch it if they know the path. Do not
+forward ports 554 and 8899 to the internet. To reach the cameras from
+elsewhere, use a VPN: see [vpn/](vpn/README.md) for a WireGuard setup.
 
-## Первая настройка
+## Contributing
 
-Скопируйте `config.example.json` в `config.json` и укажите свои параметры:
+Adding your camera to the database takes one command and half an hour, and
+saves the next person an evening of forum archaeology. See
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
-    copy config.example.json config.json
+Entries with status `closed` — "there is no standard way in" — are valuable
+too. They save people from trying.
 
-Файл `config.json` в репозиторий не попадает — он в `.gitignore`,
-так как содержит пароль от камеры.
+## License
 
-## Лицензия
+Code — [MIT](LICENSE). Take it and do what you like.
 
-Код — [MIT](LICENSE). Берите и делайте что хотите.
+Device database (`db/`) — [CC BY-SA 4.0](db/LICENSE). Free to use, including
+commercially; a derived database has to stay open. The copyleft covers the
+data, not your code that reads it.
 
-База устройств (`db/`) — [CC BY-SA 4.0](db/LICENSE). Пользоваться можно
-свободно, в том числе коммерчески; производная база должна остаться
-открытой. На ваш код, который её использует, копилефт не распространяется.
-
-Вклады принимаются на условиях [CLA.md](CLA.md).
+Contributions are accepted under [CLA.md](CLA.md).

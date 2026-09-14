@@ -10,11 +10,21 @@
 VLC внутрь НЕ упаковывается: он остаётся внешней зависимостью. Так честнее
 по лицензии (VLC под LGPL) и сборка не весит лишние сотни мегабайт.
 Пользователю нужен установленный VLC той же разрядности, что и сборка.
+
+    python build.py --onedir
+
+То же самое, но папкой, упакованной в .zip. Скачивать дольше, зато Windows
+Defender и SmartScreen ругаются на такую сборку заметно реже: одиночный exe
+распаковывает себя во временный каталог, а это поведение похоже на упаковщик
+вредоноса. В релиз имеет смысл класть оба варианта.
 """
+import argparse
+import hashlib
 import os
 import shutil
 import subprocess
 import sys
+import zipfile
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -36,13 +46,21 @@ def wsdl_source():
     raise SystemExit("Не найден каталог wsdl. Установите: pip install onvif-zeep")
 
 
-def build(script, name, windowed, extra_data):
+def sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def build(script, name, windowed, extra_data, onefile=True):
     separator = ";" if sys.platform == "win32" else ":"
     command = [
         sys.executable, "-m", "PyInstaller",
         "--noconfirm",
         "--clean",
-        "--onefile",
+        "--onefile" if onefile else "--onedir",
         "--name", name,
         "--distpath", os.path.join(BASE_DIR, "dist"),
         "--workpath", os.path.join(BASE_DIR, "build"),
@@ -65,7 +83,27 @@ def build(script, name, windowed, extra_data):
         raise SystemExit("Сборка %s не удалась" % name)
 
 
+def pack_folder(dist, name):
+    """Сборку папкой отдавать пользователю россыпью нельзя — пакуем в .zip."""
+    folder = os.path.join(dist, name)
+    if not os.path.isdir(folder):
+        return None
+    archive = os.path.join(dist, "%s.zip" % name)
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, _, files in os.walk(folder):
+            for item in files:
+                full = os.path.join(root, item)
+                zf.write(full, os.path.relpath(full, dist))
+    shutil.rmtree(folder)
+    return archive
+
+
 def main():
+    parser = argparse.ArgumentParser(description="Сборка .exe для Windows")
+    parser.add_argument("--onedir", action="store_true",
+                        help="собрать папкой и упаковать в .zip вместо одиночного exe")
+    args = parser.parse_args()
+
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8")
@@ -74,30 +112,53 @@ def main():
 
     wsdl = wsdl_source()
     db = os.path.join(BASE_DIR, "db")
+    dist = os.path.join(BASE_DIR, "dist")
     print("wsdl : %s" % wsdl)
     print("база : %s" % db)
 
+    onefile = not args.onedir
+
     # Клиенту база не нужна — он работает по готовому config.json
     build("client.py", "CameraClient", windowed=True,
-          extra_data=[(wsdl, "wsdl")])
+          extra_data=[(wsdl, "wsdl")], onefile=onefile)
 
     # Диагностике нужна база отпечатков
     build("probe.py", "CameraProbe", windowed=False,
-          extra_data=[(wsdl, "wsdl"), (db, "db")])
+          extra_data=[(wsdl, "wsdl"), (db, "db")], onefile=onefile)
+
+    if args.onedir:
+        for name in ("CameraClient", "CameraProbe"):
+            archive = pack_folder(dist, name)
+            if archive:
+                print("Упаковано: %s" % archive)
 
     # Пример конфигурации кладём рядом, чтобы было с чего начать
     example = os.path.join(BASE_DIR, "config.example.json")
     if os.path.isfile(example):
-        shutil.copy(example, os.path.join(BASE_DIR, "dist", "config.example.json"))
+        shutil.copy(example, os.path.join(dist, "config.example.json"))
 
     print("\n=== Готово ===")
-    dist = os.path.join(BASE_DIR, "dist")
+    sums = []
     for name in sorted(os.listdir(dist)):
         path = os.path.join(dist, name)
+        if not os.path.isfile(path) or name == "SHA256SUMS.txt":
+            continue
         size = os.path.getsize(path) / 1024 / 1024
-        print("  %-28s %6.1f МБ" % (name, size))
+        digest = sha256(path)
+        sums.append("%s  %s" % (digest, name))
+        print("  %-28s %6.1f МБ  %s" % (name, size, digest))
+
+    # Контрольные суммы идут в описание релиза: сборка не подписана
+    # сертификатом, и у скачавшего должен быть способ проверить файл.
+    sums_path = os.path.join(dist, "SHA256SUMS.txt")
+    with open(sums_path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("\n".join(sums) + "\n")
+
     print("\nПапка: %s" % dist)
+    print("Контрольные суммы: %s" % sums_path)
     print("Напоминание: на компьютере пользователя должен быть установлен VLC.")
+    print("Сборка не подписана — Windows покажет предупреждение SmartScreen.")
+    print("Приложите SHA256 и ссылку на VirusTotal к описанию релиза.")
 
 
 if __name__ == "__main__":
