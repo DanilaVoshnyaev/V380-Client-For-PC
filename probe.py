@@ -304,6 +304,11 @@ def make_report(data):
     line(t("rpt_step4"))
 
 
+def _looks_private(cidr):
+    """Приватная ли это сеть — по первому адресу в записи CIDR или в IP."""
+    return fingerprint.is_private(cidr.split("/")[0].strip())
+
+
 def run_scan(cidr, user, password, report_path=None):
     """Обход подсети: находит все камеры и сводит их в таблицу."""
     head(t("hdr_scan", cidr))
@@ -460,6 +465,8 @@ def main():
     parser = argparse.ArgumentParser(description=t("arg_description"))
     parser.add_argument("host", nargs="?", help=t("arg_host"))
     parser.add_argument("--scan", metavar="CIDR", help=t("arg_scan"))
+    parser.add_argument("--i-own-this", action="store_true",
+                        help=t("arg_i_own_this"))
     parser.add_argument("--user", default="admin", help=t("arg_user"))
     parser.add_argument("--password", default="", help=t("arg_password"))
     parser.add_argument("--write-config", action="store_true",
@@ -476,7 +483,23 @@ def main():
         parser.error(t("err_need_target"))
 
     if args.scan:
-        return run_scan(args.scan, args.user, args.password, args.report_html)
+        cidr = args.scan
+        # "auto" — определить свою сеть самостоятельно, чтобы человеку не
+        # нужно было узнавать IP и разбираться, что такое /24.
+        if cidr == "auto":
+            own_ip, cidr = fingerprint.local_subnet()
+            if not cidr:
+                line(t("scan_auto_failed", own_ip or "?"))
+                return 1
+            line(t("scan_auto_detected", cidr))
+        # Предохранитель: инструмент — для своей сети. Публичный адрес это
+        # чужой узел в интернете, сканировать его нельзя ни юридически, ни
+        # по замыслу проекта. Явный публичный /32 из одного адреса пропускаем
+        # с предупреждением только при --i-own-this.
+        elif not _looks_private(cidr) and not args.i_own_this:
+            line(t("scan_not_private", cidr))
+            return 2
+        return run_scan(cidr, args.user, args.password, args.report_html)
 
     if args.discover:
         head(t("hdr_discover"))

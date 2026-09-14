@@ -137,6 +137,11 @@ def main():
     if os.path.isfile(example):
         shutil.copy(example, os.path.join(dist, "config.example.json"))
 
+    # Двойной клик по .bat — обследование камер без единой команды в терминале
+    launcher = os.path.join(BASE_DIR, "scan-cameras.bat")
+    if os.path.isfile(launcher):
+        shutil.copy(launcher, os.path.join(dist, "scan-cameras.bat"))
+
     print("\n=== Готово ===")
     sums = []
     for name in sorted(os.listdir(dist)):

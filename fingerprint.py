@@ -25,6 +25,47 @@ COMMON_RTSP_PATHS = [
 ]
 
 
+# ---------------------------------------------------------------- своя сеть
+
+def local_subnet():
+    """
+    Определяет подсеть, в которой находится сам компьютер, чтобы человеку
+    не пришлось узнавать IP через ipconfig и разбираться, что такое /24.
+
+    Берёт адрес того интерфейса, через который машина ходит в сеть, и
+    превращает его в /24. UDP-connect ничего никуда не отправляет —
+    только заставляет ОС выбрать маршрут и назвать локальный адрес.
+
+    Возвращает (свой_ip, "x.y.z.0/24") или (None, None), если не вышло
+    либо адрес не из приватного диапазона (тогда сканировать нельзя).
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("8.8.8.8", 80))
+        ip = sock.getsockname()[0]
+    except OSError:
+        return None, None
+    finally:
+        sock.close()
+
+    if not is_private(ip):
+        return ip, None
+
+    parts = ip.split(".")
+    return ip, ".".join(parts[:3] + ["0"]) + "/24"
+
+
+def is_private(ip):
+    """Приватный диапазон RFC 1918 — то есть заведомо своя локальная сеть."""
+    try:
+        a, b = (int(x) for x in ip.split(".")[:2])
+    except ValueError:
+        return False
+    return (a == 10 or a == 127
+            or (a == 192 and b == 168)
+            or (a == 172 and 16 <= b <= 31))
+
+
 # ---------------------------------------------------------------- порты
 
 def scan_ports(host, ports=None, timeout=1.2):

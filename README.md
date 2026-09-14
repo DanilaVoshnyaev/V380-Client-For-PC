@@ -50,6 +50,16 @@ open. Without that check, scanning a network with Docker, WSL or a VPN on it
 "finds" hundreds of cameras that do not exist: there, a TCP connection
 succeeds against any address at all.
 
+### No terminal at all
+
+    python probe.py --scan auto
+
+`auto` detects your own network, so you do not have to look up your IP or know
+what a subnet is. In the packaged build, double-clicking **scan-cameras.bat**
+does exactly this — scans the network, writes a report and opens it, with no
+command line involved. Scanning an address outside your own network is refused
+unless you pass `--i-own-this`.
+
 ### A report you can hand over
 
     python probe.py --scan 192.168.1.0/24 --report-html survey.html
