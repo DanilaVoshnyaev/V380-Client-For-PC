@@ -166,15 +166,15 @@ The same URLs work in VLC, Agent DVR, Blue Iris, Frigate and Home Assistant.
 
 ## Requirements
 
-Python 3.12, VLC installed (64-bit), and:
+Python 3.12, VLC installed (64-bit), and the Python packages:
 
-    pip install onvif-zeep WSDiscovery python-vlc
+    pip install -r requirements.txt
 
 ## Building the .exe
 
-So that people without Python can use the tool:
+So that people without Python can use the tool (`requirements.txt` already
+includes PyInstaller):
 
-    pip install pyinstaller
     python build.py
 
 `dist/` will contain `CameraClient.exe` (~20 MB) and `CameraProbe.exe`

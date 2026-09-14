@@ -157,15 +157,15 @@
 
 ## Требования
 
-Python 3.12, установленный VLC (64-бит), пакеты:
+Python 3.12, установленный VLC (64-бит) и пакеты Python:
 
-    pip install onvif-zeep WSDiscovery python-vlc
+    pip install -r requirements.txt
 
 ## Сборка .exe
 
-Чтобы инструментом могли пользоваться люди без Python:
+Чтобы инструментом могли пользоваться люди без Python (PyInstaller уже
+включён в `requirements.txt`):
 
-    pip install pyinstaller
     python build.py
 
 В папке `dist/` появятся `CameraClient.exe` (около 20 МБ) и
