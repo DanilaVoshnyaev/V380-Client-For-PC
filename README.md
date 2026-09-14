@@ -50,6 +50,18 @@ open. Without that check, scanning a network with Docker, WSL or a VPN on it
 "finds" hundreds of cameras that do not exist: there, a TCP connection
 succeeds against any address at all.
 
+### A report you can hand over
+
+    python probe.py --scan 192.168.1.0/24 --report-html survey.html
+
+Writes the survey as one self-contained HTML page: a summary, the device
+table, the working stream URLs, and a warning for every camera serving video
+without a password. It pulls in nothing from the internet, so it opens
+offline, on a phone, from a USB stick, and prints to PDF cleanly.
+
+The report holds the addresses and MAC addresses of real equipment — keep it
+out of the repository.
+
 ## Which cameras are supported
 
 **Any of them.** `probe.py` does not need your model to be in the database.

@@ -20,6 +20,7 @@ import sys
 import camdb
 import fingerprint
 import i18n
+import report
 from i18n import t
 
 import paths
@@ -303,7 +304,7 @@ def make_report(data):
     line(t("rpt_step4"))
 
 
-def run_scan(cidr, user, password):
+def run_scan(cidr, user, password, report_path=None):
     """Обход подсети: находит все камеры и сводит их в таблицу."""
     head(t("hdr_scan", cidr))
 
@@ -370,17 +371,21 @@ def run_scan(cidr, user, password):
         # Устройство с одним лишь HTTP — обычно роутер, принтер или NAS.
         is_camera = bool(streams or onvif or data.get("protocol") == "rtsp")
 
+        # status — текст для человека, action — машинный ключ для отчёта.
+        # Разделено, чтобы вёрстка отчёта не зависела от языка вывода.
         if streams:
-            status = t("st_stream_available")
+            status, action = t("st_stream_available"), "ready"
         elif record and record.get("unlock", {}).get("status") == "hidden-onvif":
-            status = t("st_enable_onvif")
+            status, action = t("st_enable_onvif"), "enable"
         elif onvif:
-            status = t("st_onvif_no_stream")
+            status, action = t("st_onvif_no_stream"), "setup"
         elif is_camera:
-            status = t("st_closed")
+            status, action = t("st_closed"), "locked"
         else:
-            status = t("st_not_camera")
+            status, action = t("st_not_camera"), None
         rows.append({
+            "action": action,
+            "no_auth": any(not s["auth_required"] for s in streams),
             "host": host,
             "mac": data.get("mac") or "?",
             "model": (record["display_name"] if record
@@ -422,6 +427,10 @@ def run_scan(cidr, user, password):
     others = len(rows) - len(cameras)
     if others:
         line(t("sum_others", others))
+
+    if report_path:
+        report.save(report_path, rows, cidr, "CameraProbe", TOOL_VERSION)
+        line(t("rh_saved", report_path))
     return 0 if ready else 1
 
 
@@ -458,6 +467,7 @@ def main():
     parser.add_argument("--report", action="store_true", help=t("arg_report"))
     parser.add_argument("--no-verify", action="store_true", help=t("arg_no_verify"))
     parser.add_argument("--discover", action="store_true", help=t("arg_discover"))
+    parser.add_argument("--report-html", metavar="FILE", help=t("arg_report_html"))
     parser.add_argument("--lang", choices=("en", "ru", "auto"), default="auto",
                         help=t("arg_lang"))
     args = parser.parse_args()
@@ -466,7 +476,7 @@ def main():
         parser.error(t("err_need_target"))
 
     if args.scan:
-        return run_scan(args.scan, args.user, args.password)
+        return run_scan(args.scan, args.user, args.password, args.report_html)
 
     if args.discover:
         head(t("hdr_discover"))
