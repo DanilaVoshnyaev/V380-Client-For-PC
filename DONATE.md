@@ -21,10 +21,11 @@ Before you send, three things worth checking:
   the other way round, destroys the funds. No one can recover them.
 - **There is no memo or tag.** If your wallet asks for one, you picked the
   wrong network.
-- **This is an exchange deposit address, so very small transfers are not
-  credited.** Anything below the exchange minimum simply disappears. If you
-  want to send a token amount, consider not sending it at all — see below for
-  ways to help that cost nothing.
+- **Please send at least 1 USDT.** This is an exchange deposit address, and
+  transfers below the exchange's own minimum are not credited — they simply
+  disappear, and no one can get them back. If you were thinking of a token
+  amount, skip it and pick something from the list below instead. It helps
+  more anyway.
 
 Verify the address before sending. The first characters are `TDBenc` and the
 last are `mVj5vY`. Clipboard-hijacking malware is a real thing, and so are
@@ -68,8 +69,10 @@ CC BY-SA, ничего не спрятано за оплатой и спрята
   взаимозаменяемы. Отправите TRC20 на адрес BEP-20 или наоборот — деньги
   сгорят, вернуть их не сможет никто.
 - **Memo и тега нет.** Если кошелёк его просит, вы выбрали не ту сеть.
-- **Это адрес пополнения на бирже, поэтому совсем мелкие переводы не
-  зачисляются.** Всё, что ниже биржевого минимума, просто пропадает.
+- **Отправляйте не меньше 1 USDT.** Это адрес пополнения на бирже, и
+  переводы ниже её собственного минимума не зачисляются — просто пропадают,
+  и вернуть их не сможет никто. Если думали про символическую сумму, лучше
+  не отправляйте, а выберите что-нибудь из списка ниже: пользы будет больше.
 
 Сверьте адрес перед отправкой: начинается на `TDBenc`, заканчивается на
 `mVj5vY`. Подмена адреса вредоносом в буфере обмена и форки с чужим адресом —
