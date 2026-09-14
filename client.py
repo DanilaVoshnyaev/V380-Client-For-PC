@@ -11,19 +11,22 @@ import os
 import sys
 import threading
 import tkinter as tk
-from tkinter import messagebox, simpledialog, ttk
+from tkinter import simpledialog, ttk
 
 import vlc
 
 from camera import Camera
 
+import fingerprint
 import paths
 
 BASE_DIR = paths.app_dir()
 CONFIG_PATH = paths.config_path()
 
 DEFAULT_CONFIG = {
-    "host": "192.168.1.100",
+    # Пусто намеренно: при первом запуске клиент откроет диалог подключения
+    # и найдёт камеры сам, вместо того чтобы стучаться в адрес-заглушку.
+    "host": "",
     "onvif_port": 8899,
     "rtsp_port": 554,
     "user": "admin",
@@ -70,7 +73,12 @@ class App(tk.Tk):
         self._init_vlc()
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
-        self.after(200, self.connect_async)
+        # Есть адрес — подключаемся сразу; нет — сначала спрашиваем данные,
+        # чтобы человеку не пришлось искать и править config.json руками.
+        if self.config_data.get("host"):
+            self.after(200, self.connect_async)
+        else:
+            self.after(200, self.open_connect_dialog)
 
     # ---------------- интерфейс ----------------
 
@@ -152,6 +160,8 @@ class App(tk.Tk):
         ttk.Button(side, text="Открыть папку", command=self.open_folder).pack(fill=tk.X, pady=2)
 
         header("")
+        ttk.Button(side, text="Подключение…", command=self.open_connect_dialog).pack(
+            fill=tk.X, pady=2)
         ttk.Button(side, text="Переподключиться", command=self.connect_async).pack(
             fill=tk.X, pady=2)
 
@@ -178,6 +188,144 @@ class App(tk.Tk):
 
     def set_status(self, text, color="#9aa0a6"):
         self.status.configure(text=text, fg=color)
+
+    def save_config(self):
+        with open(CONFIG_PATH, "w", encoding="utf-8") as fh:
+            json.dump(self.config_data, fh, indent=2, ensure_ascii=False)
+
+    # ---------------- диалог подключения ----------------
+
+    def open_connect_dialog(self):
+        dialog = tk.Toplevel(self)
+        dialog.title("Подключение к камере")
+        dialog.configure(bg=BG)
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.grab_set()
+
+        found = {}  # "текст в списке" -> {"host", "port"}
+
+        def row(label):
+            tk.Label(dialog, text=label, bg=BG, fg="#9aa0a6",
+                     font=("Segoe UI", 9)).pack(anchor="w", padx=16, pady=(10, 2))
+
+        # --- поиск камер в сети ---
+        subnet = fingerprint.local_subnet()[1]
+        net_text = ("Ваша сеть: %s" % subnet) if subnet else "Сеть не определена"
+        find_status = tk.Label(dialog, text=net_text, bg=BG, fg="#9aa0a6",
+                               font=("Segoe UI", 9))
+
+        row("КАМЕРЫ В СЕТИ")
+        camera_box = ttk.Combobox(dialog, state="readonly", width=36,
+                                  values=["— нажмите «Найти камеры» —"])
+        camera_box.current(0)
+        camera_box.pack(padx=16, fill=tk.X)
+
+        def on_pick(_event=None):
+            item = found.get(camera_box.get())
+            if item:
+                host_var.set(item["host"])
+                if item.get("port"):
+                    onvif_var.set(str(item["port"]))
+
+        camera_box.bind("<<ComboboxSelected>>", on_pick)
+
+        def find_worker():
+            addresses = fingerprint.discover_onvif(timeout=4) or []
+            values, mapping = [], {}
+            for address in addresses:
+                try:
+                    hostport = address.split("://", 1)[1].split("/", 1)[0]
+                    host, _, port = hostport.partition(":")
+                except IndexError:
+                    continue
+                label = "%s (ONVIF %s)" % (host, port or "80")
+                values.append(label)
+                mapping[label] = {"host": host, "port": int(port) if port else 80}
+
+            def done():
+                found.clear()
+                found.update(mapping)
+                if values:
+                    camera_box.configure(values=values)
+                    camera_box.current(0)
+                    on_pick()
+                    find_status.configure(
+                        text="Найдено камер: %d" % len(values), fg="#22c55e")
+                else:
+                    camera_box.configure(values=["— камеры не найдены —"])
+                    camera_box.current(0)
+                    find_status.configure(
+                        text="Камеры не ответили. Введите адрес вручную ниже.",
+                        fg="#f59e0b")
+                find_btn.configure(state=tk.NORMAL, text="Найти камеры")
+
+            self.after(0, done)
+
+        def start_find():
+            find_btn.configure(state=tk.DISABLED, text="Ищу…")
+            find_status.configure(text="Ищу камеры в сети…", fg="#9aa0a6")
+            threading.Thread(target=find_worker, daemon=True).start()
+
+        find_btn = ttk.Button(dialog, text="Найти камеры", command=start_find)
+        find_btn.pack(padx=16, pady=(6, 2), fill=tk.X)
+        find_status.pack(anchor="w", padx=16)
+
+        # --- поля ввода ---
+        host_var = tk.StringVar(value=self.config_data.get("host", ""))
+        user_var = tk.StringVar(value=self.config_data.get("user", "admin"))
+        pass_var = tk.StringVar(value=self.config_data.get("password", ""))
+        onvif_var = tk.StringVar(value=str(self.config_data.get("onvif_port", 8899)))
+
+        def entry(var, show=None):
+            widget = tk.Entry(dialog, textvariable=var, show=show, width=38,
+                              bg="#2b2d31", fg=FG, insertbackground=FG,
+                              relief=tk.FLAT)
+            widget.pack(padx=16, ipady=4, fill=tk.X)
+            return widget
+
+        row("АДРЕС КАМЕРЫ (ID устройства)")
+        entry(host_var)
+        row("ЛОГИН")
+        entry(user_var)
+        row("ПАРОЛЬ")
+        entry(pass_var, show="•")
+
+        # порт ONVIF нужен редко — прячем за компактной строкой
+        row("ПОРТ ONVIF")
+        entry(onvif_var)
+
+        def do_connect():
+            host = host_var.get().strip()
+            if not host:
+                find_status.configure(text="Введите адрес камеры.", fg="#ef4444")
+                return
+            try:
+                port = int(onvif_var.get().strip() or 8899)
+            except ValueError:
+                port = 8899
+            self.config_data["host"] = host
+            self.config_data["user"] = user_var.get().strip() or "admin"
+            self.config_data["password"] = pass_var.get()
+            self.config_data["onvif_port"] = port
+            self.save_config()
+            dialog.destroy()
+            self.connect_async()
+
+        buttons = tk.Frame(dialog, bg=BG)
+        buttons.pack(fill=tk.X, padx=16, pady=14)
+        ttk.Button(buttons, text="Подключиться", command=do_connect).pack(
+            side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 4))
+        ttk.Button(buttons, text="Отмена", command=dialog.destroy).pack(
+            side=tk.LEFT, expand=True, fill=tk.X, padx=(4, 0))
+
+        dialog.bind("<Return>", lambda e: do_connect())
+        dialog.bind("<Escape>", lambda e: dialog.destroy())
+        dialog.update_idletasks()
+        # по центру родительского окна
+        x = self.winfo_rootx() + (self.winfo_width() - dialog.winfo_width()) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - dialog.winfo_height()) // 2
+        dialog.geometry("+%d+%d" % (max(x, 0), max(y, 0)))
 
     # ---------------- подключение ----------------
 
@@ -391,11 +539,8 @@ class App(tk.Tk):
 
 
 def main():
-    config = load_config()
-    if not config.get("host"):
-        messagebox.showerror("Ошибка", "Укажите host в config.json")
-        return 1
-    App(config).mainloop()
+    # Пустой host — не ошибка: клиент откроет диалог подключения сам.
+    App(load_config()).mainloop()
     return 0
 
 

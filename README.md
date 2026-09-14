@@ -111,6 +111,11 @@ Double-click `run.bat`, or:
 
     python client.py
 
+On first launch the client opens a connection dialog: click **Find cameras**
+to discover them on your network (no need to know the IP), pick one, enter the
+login and password, and connect. The choice is saved, so next time it connects
+straight away. You can reopen the dialog any time with **Подключение…**.
+
 ## Features
 
 - Live video (H264 720p / 360p, switch on the fly)
