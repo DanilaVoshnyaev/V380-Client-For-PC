@@ -77,7 +77,7 @@ def show_match(results):
         return None
 
     record, points, reasons = results[0]
-    line(record["display_name"])
+    line(camdb.localized(record["display_name"]))
     line(t("match_score", points, ", ".join(reasons)))
     if record.get("aliases"):
         line(t("match_aliases", ", ".join(record["aliases"])))
@@ -85,7 +85,8 @@ def show_match(results):
         line(t("match_cloud_app", record["cloud_app"]))
 
     for other, other_points, _ in results[1:3]:
-        line(t("match_also_like", other["display_name"], other_points))
+        line(t("match_also_like",
+               camdb.localized(other["display_name"]), other_points))
     return record
 
 
@@ -104,9 +105,10 @@ def show_unlock(record, already_open=False):
 
     if status == "hidden-onvif":
         if unlock.get("app_path"):
-            line(t("unlock_where", unlock["app_path"]))
+            line(t("unlock_where", camdb.localized(unlock["app_path"])))
         print()
-        for number, step in enumerate(unlock.get("steps", []), 1):
+        for number, step in enumerate(
+                camdb.localized(unlock.get("steps", [])), 1):
             line("%d. %s" % (number, step))
         if unlock.get("requires_reboot"):
             print()
@@ -173,7 +175,7 @@ def show_security(data, record):
     if record:
         security = record.get("security") or {}
         if security.get("notes"):
-            warnings.append(security["notes"])
+            warnings.append(camdb.localized(security["notes"]))
     if not warnings:
         return
     head(t("hdr_security"))
@@ -393,7 +395,7 @@ def run_scan(cidr, user, password, report_path=None):
             "no_auth": any(not s["auth_required"] for s in streams),
             "host": host,
             "mac": data.get("mac") or "?",
-            "model": (record["display_name"] if record
+            "model": (camdb.localized(record["display_name"]) if record
                       else (onvif.get("model") or t("val_unknown_model"))),
             "firmware": onvif.get("firmware") or "?",
             "status": status,

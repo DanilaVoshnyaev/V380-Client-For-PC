@@ -42,6 +42,38 @@ def allowed_keys():
     return set(schema["properties"].keys()), schema
 
 
+# Поля, которые читает пользователь: строка либо словарь языков {en, ru}
+LOCALIZED_FIELDS = (
+    ("display_name", lambda r: [r.get("display_name")]),
+    ("notes", lambda r: [r.get("notes")]),
+    ("unlock.app_path", lambda r: [(r.get("unlock") or {}).get("app_path")]),
+    ("unlock.steps", lambda r: (r.get("unlock") or {}).get("steps") or []),
+    ("security.notes", lambda r: [(r.get("security") or {}).get("notes")]),
+    ("streams[].label", lambda r: [s.get("label") for s in r.get("streams", [])]),
+)
+
+
+def check_localized(record, where, report):
+    """
+    Перевод без английского не принимаем: база международная, и английский —
+    запасной вариант для всех остальных языков.
+    """
+    for name, extract in LOCALIZED_FIELDS:
+        for value in extract(record):
+            if value is None or isinstance(value, str):
+                continue
+            if not isinstance(value, dict):
+                report.error(where, "%s: ожидается строка или словарь языков" % name)
+                continue
+            if not value.get("en"):
+                report.error(where, "%s: в переводе обязателен ключ 'en'" % name)
+            for code, text in value.items():
+                if len(code) != 2 or not code.isalpha() or not code.islower():
+                    report.error(where, "%s: '%s' не похож на код языка" % (name, code))
+                elif not isinstance(text, str) or not text.strip():
+                    report.error(where, "%s: пустой перевод для '%s'" % (name, code))
+
+
 def check_record(record, filename, report, top_keys, schema):
     where = filename
 
@@ -98,6 +130,8 @@ def check_record(record, filename, report, top_keys, schema):
         path = stream.get("path", "")
         if not path.startswith("/"):
             report.error(where, "путь потока '%s' должен начинаться со слэша" % path)
+
+    check_localized(record, where, report)
 
     verified = record.get("verified", {})
     if not DATE_RE.match(verified.get("date", "")):

@@ -1,68 +1,101 @@
 {
   "id": "macro-video-ipcamera-2.4",
-  "display_name": "V380 / Galatron PTZ (macro-video, firmware 2.4)",
+  "display_name": {
+    "en": "V380 / Galatron PTZ (macro-video, firmware 2.4)",
+    "ru": "V380 / Galatron PTZ (macro-video, прошивка 2.4)"
+  },
   "aliases": [
     "Galatron",
     "V380 Pro PTZ",
     "Macro-Video IPCamera"
   ],
   "cloud_app": "V380 Pro",
-
   "match": {
     "onvif_manufacturer": "macro-video-soft",
     "onvif_model": "IPCamera",
-    "firmware": ["2.4"],
+    "firmware": [
+      "2.4"
+    ],
     "rtsp_banner": "macro-video rtsp server",
-    "mac_prefixes": ["4C:2F:7B"],
-    "ports": [554, 8899]
-  },
-
-  "unlock": {
-    "status": "hidden-onvif",
-    "app_path": "V380 Pro → camera settings → ONVIF",
-    "requires_reboot": true,
-    "steps": [
-      "Open the V380 Pro mobile app and go into the camera's settings.",
-      "Find the ONVIF section and turn the switch on.",
-      "Leave the port at its default, 8899.",
-      "Set an ONVIF username and password. These are separate credentials, not your cloud account password. The username is usually admin.",
-      "If there is a separate RTSP switch next to it, turn that on as well.",
-      "Save, then reboot the camera: cut the power for 10 seconds. Without a reboot the setting does not take effect.",
-      "Wait a minute and check: ports 554 and 8899 should now be open."
+    "mac_prefixes": [
+      "4C:2F:7B"
+    ],
+    "ports": [
+      554,
+      8899
     ]
   },
-
+  "unlock": {
+    "status": "hidden-onvif",
+    "app_path": {
+      "en": "V380 Pro -> camera settings -> ONVIF",
+      "ru": "V380 Pro -> настройки камеры -> ONVIF"
+    },
+    "requires_reboot": true,
+    "steps": [
+      {
+        "en": "Open the V380 Pro mobile app and go into the camera's settings.",
+        "ru": "Откройте мобильное приложение V380 Pro и войдите в настройки камеры."
+      },
+      {
+        "en": "Find the ONVIF section and turn the switch on.",
+        "ru": "Найдите раздел ONVIF и включите переключатель."
+      },
+      {
+        "en": "Leave the port at its default, 8899.",
+        "ru": "Порт оставьте по умолчанию — 8899."
+      },
+      {
+        "en": "Set an ONVIF username and password. These are separate credentials, not your cloud account password. The username is usually admin.",
+        "ru": "Задайте логин и пароль ONVIF. Это отдельные учётные данные, а не пароль облачного аккаунта. Логин обычно admin."
+      },
+      {
+        "en": "If there is a separate RTSP switch next to it, turn that on as well.",
+        "ru": "Если рядом есть отдельный переключатель RTSP — включите и его."
+      },
+      {
+        "en": "Save, then reboot the camera: cut the power for 10 seconds. Without a reboot the setting does not take effect.",
+        "ru": "Сохраните и перезагрузите камеру: отключите питание на 10 секунд. Без перезагрузки настройка не применяется."
+      },
+      {
+        "en": "Wait a minute and check: ports 554 and 8899 should now be open.",
+        "ru": "Через минуту проверьте: порты 554 и 8899 должны открыться."
+      }
+    ]
+  },
   "onvif": {
     "port": 8899,
     "service_path": "/onvif/device_service",
     "auth_required": true,
     "default_user": "admin"
   },
-
   "rtsp": {
     "port": 554,
     "auth_required": false
   },
-
   "streams": [
     {
       "path": "/live/ch00_0",
       "resolution": "1280x720",
       "codec": "H264",
       "audio": "AAC 16 kHz",
-      "label": "Main stream"
+      "label": {
+        "en": "Main stream",
+        "ru": "Основной поток"
+      }
     },
     {
       "path": "/live/ch00_1",
       "resolution": "640x360",
       "codec": "H264",
       "audio": "AAC 16 kHz",
-      "label": "Sub stream"
+      "label": {
+        "en": "Sub stream",
+        "ru": "Дополнительный поток"
+      }
     }
   ],
-
   "snapshot_url": "http://{host}:8899/snapshot/{profile}",
-
   "features": {
     "ptz": true,
     "zoom": true,
@@ -72,14 +105,17 @@
     "sd_playback": null,
     "motion_events": null
   },
-
   "security": {
     "rtsp_without_auth": true,
-    "notes": "The RTSP server serves video with no authentication at all: anyone on the local network can watch it if they know the path. Do not forward ports 554 and 8899 to the internet. Use a VPN to reach the camera from another network."
+    "notes": {
+      "en": "The RTSP server serves video with no authentication at all: anyone on the local network can watch it if they know the path. Do not forward ports 554 and 8899 to the internet. Use a VPN to reach the camera from another network.",
+      "ru": "RTSP-сервер отдаёт видео вообще без авторизации: любой в локальной сети может его смотреть, зная путь. Не пробрасывайте порты 554 и 8899 в интернет. Для доступа из другой сети используйте VPN."
+    }
   },
-
-  "notes": "ONVIF is implemented fully: Media, PTZ, Imaging and Events. Continuous and absolute positioning, zoom and presets all work. The serial number in the ONVIF response is fake (123456789) and useless for identification. GetStreamUri returns the stream address without a port number — port 554 has to be filled in by the client.",
-
+  "notes": {
+    "en": "ONVIF is implemented fully: Media, PTZ, Imaging and Events. Continuous and absolute positioning, zoom and presets all work. The serial number in the ONVIF response is fake (123456789) and useless for identification. GetStreamUri returns the stream address without a port number — port 554 has to be filled in by the client.",
+    "ru": "ONVIF реализован полно: Media, PTZ, Imaging и Events. Работают непрерывное и абсолютное позиционирование, зум и пресеты. Серийный номер в ответе ONVIF фиктивный (123456789) и для опознавания непригоден. GetStreamUri возвращает адрес потока без номера порта — 554 клиент должен подставить сам."
+  },
   "verified": {
     "date": "2026-09-12",
     "by": "DanilaVoshnyaev",

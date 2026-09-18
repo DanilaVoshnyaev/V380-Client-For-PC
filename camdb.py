@@ -52,6 +52,24 @@ def load_db(directory=None):
     return records
 
 
+def localized(value, lang=None):
+    """
+    Текстовое поле записи бывает обычной строкой либо словарём языков:
+
+        "notes": "English text"
+        "notes": {"en": "English text", "ru": "Русский текст"}
+
+    Английский обязателен и служит запасным вариантом: база международная,
+    а перевод присылают не к каждой записи.
+    """
+    if isinstance(value, dict):
+        lang = lang or i18n.language()
+        return value.get(lang) or value.get("en") or next(iter(value.values()), "")
+    if isinstance(value, list):
+        return [localized(item, lang) for item in value]
+    return value
+
+
 def _norm(value):
     return (value or "").strip().lower()
 
@@ -134,7 +152,7 @@ def stream_urls(record, host):
             path = "/" + path
         urls.append({
             "url": "rtsp://%s:%d%s" % (host, port, path),
-            "label": stream.get("label", ""),
+            "label": localized(stream.get("label", "")),
             "resolution": stream.get("resolution", ""),
             "codec": stream.get("codec", ""),
         })
@@ -144,7 +162,7 @@ def stream_urls(record, host):
 def describe(record):
     """Краткое человекочитаемое описание записи."""
     status = (record.get("unlock") or {}).get("status", "?")
-    return "%s — %s" % (record["display_name"], status_text(status))
+    return "%s — %s" % (localized(record["display_name"]), status_text(status))
 
 
 def as_config(record, host, user="admin", password=""):
