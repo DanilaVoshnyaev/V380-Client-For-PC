@@ -132,6 +132,21 @@ def main():
             if archive:
                 print("Упаковано: %s" % archive)
 
+    # Личные файлы в dist/ попадают случайно — например, если запускали
+    # собранный exe прямо оттуда. В релиз они уходить не должны: config.json
+    # содержит пароль от камеры, конфиги WireGuard — приватные ключи.
+    for name in sorted(os.listdir(dist)):
+        path = os.path.join(dist, name)
+        if not os.path.isfile(path):
+            continue
+        leaked = (name == "config.json"
+                  or name.endswith(".conf")
+                  or name.endswith("-qr.png")
+                  or name.startswith("reports"))
+        if leaked:
+            os.remove(path)
+            print("Удалён личный файл из сборки: %s" % name)
+
     # Пример конфигурации кладём рядом, чтобы было с чего начать
     example = os.path.join(BASE_DIR, "config.example.json")
     if os.path.isfile(example):
