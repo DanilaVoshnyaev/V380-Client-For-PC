@@ -14,7 +14,7 @@ python-vlc        # вывод видео; требует установленн
 
 # --- vpn/wg_setup.py: генерация конфигов WireGuard ---
 cryptography      # ключи X25519
-qrcode[pil]       # QR-код конфига для телефона
+qrcode[pil]       # QR-коды для телефона: конфиг VPN, ссылка на поток в клиенте
 
 # --- сборка .exe (build.py), нужна только при сборке ---
 pyinstaller

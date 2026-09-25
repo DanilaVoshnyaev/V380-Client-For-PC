@@ -163,6 +163,10 @@ class App(tk.Tk):
         self.record_btn.pack(fill=tk.X, pady=2)
         ttk.Button(side, text="Открыть папку", command=self.open_folder).pack(fill=tk.X, pady=2)
 
+        header("ТЕЛЕФОН")
+        ttk.Button(side, text="Смотреть на телефоне…", command=self.show_phone_qr).pack(
+            fill=tk.X, pady=2)
+
         header("")
         ttk.Button(side, text="Подключение…", command=self.open_connect_dialog).pack(
             fill=tk.X, pady=2)
@@ -521,6 +525,72 @@ class App(tk.Tk):
         self.recorder.play()
         self.record_btn.configure(text="■ Остановить запись")
         self.set_status("Идёт запись → %s" % self.record_path, "#f59e0b")
+
+    def show_phone_qr(self):
+        if not self.camera:
+            self.set_status("Сначала подключитесь к камере", "#f59e0b")
+            return
+        import qrcode
+
+        uri = self.camera.profiles[self.profile_index]["uri"]
+        code = qrcode.QRCode(border=4, error_correction=qrcode.constants.ERROR_CORRECT_M)
+        code.add_data(uri)
+        code.make(fit=True)
+        matrix = code.get_matrix()
+
+        dialog = tk.Toplevel(self)
+        dialog.title("Смотреть на телефоне")
+        dialog.configure(bg=BG)
+        dialog.resizable(False, False)
+        dialog.transient(self)
+
+        # Рисуем модули прямо на холсте: так не нужен Pillow в сборке
+        cell = max(4, 300 // len(matrix))
+        size = cell * len(matrix)
+        canvas = tk.Canvas(dialog, width=size, height=size, bg="white",
+                           highlightthickness=0)
+        canvas.pack(padx=16, pady=(16, 8))
+        for y, line in enumerate(matrix):
+            for x, dark in enumerate(line):
+                if dark:
+                    canvas.create_rectangle(x * cell, y * cell, (x + 1) * cell,
+                                            (y + 1) * cell, fill="black", width=0)
+
+        steps = (
+            "1. Установите на телефон VLC (Google Play или App Store).\n"
+            "2. Подключите телефон к той же сети Wi-Fi, что и камера.\n"
+            "3. Наведите камеру телефона на код и откройте ссылку в VLC.\n"
+            "    На iPhone: скопируйте ссылку, в VLC выберите\n"
+            "    «Сеть» → «Открыть сетевой поток» и вставьте её."
+        )
+        tk.Label(dialog, text=steps, bg=BG, fg=FG, justify=tk.LEFT,
+                 font=("Segoe UI", 9)).pack(anchor="w", padx=16)
+
+        link = tk.Entry(dialog, bg="#2b2d31", fg=FG, relief=tk.FLAT,
+                        readonlybackground="#2b2d31", width=48)
+        link.insert(0, uri)
+        link.configure(state="readonly")
+        link.pack(padx=16, pady=(10, 4), ipady=4, fill=tk.X)
+
+        def copy():
+            self.clipboard_clear()
+            self.clipboard_append(uri)
+            copy_btn.configure(text="Скопировано")
+
+        buttons = tk.Frame(dialog, bg=BG)
+        buttons.pack(fill=tk.X, padx=16, pady=(4, 8))
+        copy_btn = ttk.Button(buttons, text="Скопировать ссылку", command=copy)
+        copy_btn.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 4))
+        ttk.Button(buttons, text="Закрыть", command=dialog.destroy).pack(
+            side=tk.LEFT, expand=True, fill=tk.X, padx=(4, 0))
+
+        hint = "Вне дома код не откроется: нужен VPN, см. vpn/README.md."
+        if self.camera.password:
+            hint += "\nВ коде зашит пароль камеры — не пересылайте его снимок."
+        tk.Label(dialog, text=hint, bg=BG, fg="#9aa0a6", justify=tk.LEFT,
+                 font=("Segoe UI", 8)).pack(anchor="w", padx=16, pady=(0, 14))
+
+        dialog.bind("<Escape>", lambda e: dialog.destroy())
 
     def open_folder(self):
         os.startfile(self._save_dir())

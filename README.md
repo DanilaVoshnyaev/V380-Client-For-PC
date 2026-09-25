@@ -124,6 +124,9 @@ straight away. You can reopen the dialog any time with **Подключение�
 - Snapshot (`S`)
 - MP4 recording (`R`) — runs alongside the live view without interrupting it
 - Fullscreen — double-click the video or press `F`, leave with `Esc`
+- Watch on your phone — **Смотреть на телефоне…** shows a QR code with the
+  stream link; scan it and open in VLC. Works on the same Wi-Fi; from
+  elsewhere you need a VPN, see [vpn/](vpn/README.md)
 
 Snapshots and recordings go to `save_dir` from `config.json`
 (by default `Users\<you>\Pictures\Camera`).
