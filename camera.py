@@ -5,6 +5,11 @@
 import os
 import sysconfig
 import threading
+from urllib.parse import quote
+
+# Без таймаута zeep ждёт ответа на запрос бесконечно: камера, принявшая
+# соединение и замолчавшая, навсегда вешает и клиент, и обход подсети.
+ONVIF_TIMEOUT = 10
 
 
 def _wsdl_dir():
@@ -56,10 +61,13 @@ class Camera:
 
     def connect(self):
         from onvif import ONVIFCamera
+        from zeep.transports import Transport
 
         with self._lock:
             self._cam = ONVIFCamera(
-                self.host, self.onvif_port, self.user, self.password, _wsdl_dir()
+                self.host, self.onvif_port, self.user, self.password, _wsdl_dir(),
+                transport=Transport(timeout=ONVIF_TIMEOUT,
+                                    operation_timeout=ONVIF_TIMEOUT),
             )
             try:
                 data = self._cam.devicemgmt.GetDeviceInformation()
@@ -109,7 +117,9 @@ class Camera:
         hostpart, _, path = rest.partition("/")
         if ":" not in hostpart:
             hostpart = f"{hostpart}:{self.rtsp_port}"
-        credentials = f"{self.user}:{self.password}@" if self.password else ""
+        # «@», «:» или «/» в пароле без экранирования ломают разбор адреса
+        credentials = (f"{quote(self.user, safe='')}:{quote(self.password, safe='')}@"
+                       if self.password else "")
         return f"{scheme}://{credentials}{hostpart}/{path}"
 
     # ---------- PTZ ----------

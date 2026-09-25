@@ -8,6 +8,7 @@
 import datetime
 import json
 import os
+import queue
 import sys
 import threading
 import tkinter as tk
@@ -63,6 +64,9 @@ class App(tk.Tk):
         self.recorder_instance = None
         self.record_path = None
         self._presets = []
+        self._ptz_state = None
+        self._ptz_queue = queue.Queue()
+        threading.Thread(target=self._ptz_worker, daemon=True).start()
 
         self.title("Камера — клиент")
         self.geometry("1060x680")
@@ -173,7 +177,7 @@ class App(tk.Tk):
         # горячие клавиши
         self.bind("<Key>", self.on_key)
         self.bind("<KeyRelease>", self.on_key_release)
-        self.bind("<Double-Button-1>", lambda e: self.toggle_fullscreen())
+        self.video_panel.bind("<Double-Button-1>", lambda e: self.toggle_fullscreen())
         self.bind("<Escape>", lambda e: self.attributes("-fullscreen", False))
 
     def _init_vlc(self):
@@ -183,6 +187,10 @@ class App(tk.Tk):
         opts.append("--network-caching=%d" % self.config_data.get("network_caching_ms", 300))
         self.vlc_instance = vlc.Instance(*opts)
         self.player = self.vlc_instance.media_player_new()
+        # Иначе окно VLC забирает мышь и клавиатуру себе, и до Tk не доходят
+        # ни двойной клик по видео, ни горячие клавиши.
+        self.player.video_set_mouse_input(False)
+        self.player.video_set_key_input(False)
         self.update_idletasks()
         self.player.set_hwnd(self.video_panel.winfo_id())
 
@@ -350,6 +358,7 @@ class App(tk.Tk):
 
     def _on_connected(self, camera):
         self.camera = camera
+        self._ptz_state = None
         names = []
         for profile in camera.profiles:
             if profile["width"]:
@@ -399,20 +408,29 @@ class App(tk.Tk):
     def ptz_move(self, dx, dy, zoom=0.0):
         if not self.camera or not self.camera.ptz_available:
             return
+        # Зажатая стрелка на Windows повторяет нажатие десятки раз в секунду,
+        # а камере хватает одной команды движения.
+        if self._ptz_state == (dx, dy, zoom):
+            return
+        self._ptz_state = (dx, dy, zoom)
         speed = self.config_data.get("ptz_speed", 0.5)
-        token = self._profile_token()
-        threading.Thread(
-            target=lambda: self._safe(
-                self.camera.move, dx * speed, dy * speed, zoom * speed, token),
-            daemon=True,
-        ).start()
+        self._ptz_queue.put((self.camera.move,
+                             (dx * speed, dy * speed, zoom * speed,
+                              self._profile_token())))
 
     def ptz_stop(self):
         if not self.camera or not self.camera.ptz_available:
             return
-        token = self._profile_token()
-        threading.Thread(
-            target=lambda: self._safe(self.camera.stop, token), daemon=True).start()
+        self._ptz_state = None
+        self._ptz_queue.put((self.camera.stop, (self._profile_token(),)))
+
+    def _ptz_worker(self):
+        # Команды уходят строго по очереди из одного потока: при отдельном
+        # потоке на каждую «стоп» мог обогнать «движение», и камера
+        # продолжала крутиться после отпускания кнопки.
+        while True:
+            fn, args = self._ptz_queue.get()
+            self._safe(fn, *args)
 
     def _safe(self, fn, *args):
         try:

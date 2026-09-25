@@ -27,6 +27,10 @@ venv/
 # Заготовки записей для базы (личные, до отправки в PR)
 reports/
 
+# HTML-отчёты обследования (probe.py --report-html, scan-cameras.bat):
+# в них адреса и MAC реального оборудования
+*.html
+
 # Артефакты сборки
 build/
 dist/

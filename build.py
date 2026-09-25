@@ -98,6 +98,27 @@ def pack_folder(dist, name):
     return archive
 
 
+def is_personal(name):
+    return (name == "config.json"
+            or name == "reports"
+            or name.endswith(".conf")
+            or name.endswith("-qr.png")
+            or name.endswith(".html"))
+
+
+def remove_personal(folder):
+    """Удаляет личные файлы, лежащие прямо в folder (без обхода вглубь)."""
+    for name in sorted(os.listdir(folder)):
+        if not is_personal(name):
+            continue
+        path = os.path.join(folder, name)
+        if os.path.isdir(path):
+            shutil.rmtree(path)
+        else:
+            os.remove(path)
+        print("Удалён личный файл из сборки: %s" % os.path.relpath(path, BASE_DIR))
+
+
 def main():
     parser = argparse.ArgumentParser(description="Сборка .exe для Windows")
     parser.add_argument("--onedir", action="store_true",
@@ -126,26 +147,22 @@ def main():
     build("probe.py", "CameraProbe", windowed=False,
           extra_data=[(wsdl, "wsdl"), (db, "db")], onefile=onefile)
 
+    # Личные файлы в dist/ попадают случайно — например, если запускали
+    # собранный exe прямо оттуда. В релиз они уходить не должны: config.json
+    # содержит пароль от камеры, конфиги WireGuard — приватные ключи,
+    # HTML-отчёт и reports/ — адреса и MAC реальных устройств.
+    # Чистим до упаковки в .zip, иначе личное уедет внутри архива.
+    remove_personal(dist)
+    for name in ("CameraClient", "CameraProbe"):
+        folder = os.path.join(dist, name)
+        if os.path.isdir(folder):
+            remove_personal(folder)
+
     if args.onedir:
         for name in ("CameraClient", "CameraProbe"):
             archive = pack_folder(dist, name)
             if archive:
                 print("Упаковано: %s" % archive)
-
-    # Личные файлы в dist/ попадают случайно — например, если запускали
-    # собранный exe прямо оттуда. В релиз они уходить не должны: config.json
-    # содержит пароль от камеры, конфиги WireGuard — приватные ключи.
-    for name in sorted(os.listdir(dist)):
-        path = os.path.join(dist, name)
-        if not os.path.isfile(path):
-            continue
-        leaked = (name == "config.json"
-                  or name.endswith(".conf")
-                  or name.endswith("-qr.png")
-                  or name.startswith("reports"))
-        if leaked:
-            os.remove(path)
-            print("Удалён личный файл из сборки: %s" % name)
 
     # Пример конфигурации кладём рядом, чтобы было с чего начать
     example = os.path.join(BASE_DIR, "config.example.json")
